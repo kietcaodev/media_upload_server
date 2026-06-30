@@ -130,7 +130,7 @@ CONN_STRING="Host=localhost;Port=5432;Database=${DB_NAME};Username=${DB_USER};Pa
 log "Build .NET backend..."
 cd "$BACKEND_DIR"
 
-dotnet restore MediaUpload.sln -v quiet
+dotnet restore MediaUpload.slnx -v quiet
 dotnet publish MediaUpload.API/MediaUpload.API.csproj \
     -c Release \
     -o "${APP_DIR}/api" \
