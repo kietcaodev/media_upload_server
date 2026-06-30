@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="MediaUpload.API/MediaUpload.API.csproj" />
+  <Project Path="MediaUpload.Application/MediaUpload.Application.csproj" />
+  <Project Path="MediaUpload.Domain/MediaUpload.Domain.csproj" />
+  <Project Path="MediaUpload.Infrastructure/MediaUpload.Infrastructure.csproj" />
+</Solution>

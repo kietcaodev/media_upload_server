@@ -1,0 +1,52 @@
+node_modules/
+uploads/
+logs/
+
+# ── Môi trường (chứa token, password – KHÔNG commit) ──
+.env
+.env.local
+.env.*.local
+*.env
+# .env.example được phép commit (không có giá trị thực)
+
+# ── Log files ──
+*.log
+*.log.*
+npm-debug.log*
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Editor ──
+*.swp
+*.swo
+.vscode/settings.json
+
+# ── .NET build output ──
+backend/**/bin/
+backend/**/obj/
+
+# ── .NET user-specific ──
+*.user
+*.suo
+.vs/
+
+# ── EF migrations snapshot (optional – thường commit migrations) ──
+# backend/**/Migrations/  ← giữ lại để deploy auto-migrate
+
+# ── Frontend build output ──
+frontend/**/dist/
+frontend/**/.cache/
+
+# ── Frontend env (riêng trong subfolder) ──
+frontend/**/.env
+frontend/**/.env.local
+frontend/**/.env.*.local
+
+# ── npm / package manager ──
+package-lock.json
+frontend/**/package-lock.json
+
+# ── Node (root level – từ project Node.js cũ) ──
+node_modules/
