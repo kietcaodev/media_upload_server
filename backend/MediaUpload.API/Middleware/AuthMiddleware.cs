@@ -9,7 +9,7 @@ namespace MediaUpload.API.Middleware;
 /// verifies BCrypt hash against stored credentials, and sets HttpContext items.
 /// Dev localhost bypass is controlled by environment only.
 /// </summary>
-public class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
+public class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger, IServiceScopeFactory scopeFactory)
 {
     public async Task InvokeAsync(HttpContext ctx)
     {
@@ -61,11 +61,30 @@ public class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger
             return;
         }
 
-        // Update last used (fire-and-forget)
-        matched.LastUsedAtUtc = DateTime.UtcNow;
+        // Update last used (fire-and-forget). QUAN TRỌNG: KHÔNG được tái sử dụng
+        // `credRepo`/DbContext của scope hiện tại ở đây – scope này (và DbContext
+        // bên trong) sẽ bị dispose ngay khi middleware return (do `using var scope`
+        // phía trên), trong khi Task.Run chạy bất đồng bộ sau đó. Vừa gây
+        // ObjectDisposedException, vừa có thể đụng độ đọc/ghi đồng thời trên cùng
+        // một NpgsqlConnection với phần còn lại của request pipeline (lỗi Npgsql
+        // "another read operation is pending"). => Tạo scope MỚI, độc lập, bên
+        // trong tác vụ nền.
+        var credentialId = matched.Id;
+        var lastUsedAtUtc = DateTime.UtcNow;
+        matched.LastUsedAtUtc = lastUsedAtUtc;
         _ = Task.Run(async () =>
         {
-            try { await credRepo.UpdateAsync(matched); }
+            try
+            {
+                using var bgScope = scopeFactory.CreateScope();
+                var bgCredRepo = bgScope.ServiceProvider.GetRequiredService<IApiCredentialRepository>();
+                var entity = await bgCredRepo.GetByIdAsync(credentialId);
+                if (entity != null)
+                {
+                    entity.LastUsedAtUtc = lastUsedAtUtc;
+                    await bgCredRepo.UpdateAsync(entity);
+                }
+            }
             catch (Exception ex) { logger.LogWarning(ex, "Failed to update LastUsedAt"); }
         });
 
