@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Row, Col, Card, Statistic, Button, Table, Tag, Typography, Space, Alert } from 'antd';
 import {
   CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
-  LoadingOutlined, PauseCircleOutlined, PlayCircleOutlined, SyncOutlined
+  PauseCircleOutlined, PlayCircleOutlined, SyncOutlined
 } from '@ant-design/icons';
 import { useDashboardStore } from '../stores/dashboardStore';
 import { useWorkerStore } from '../stores/workerStore';
@@ -93,7 +93,7 @@ export default function DashboardPage() {
           <Card><Statistic title="Pending" value={stats?.pendingJobs ?? '-'} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
-          <Card><Statistic title="Processing" value={stats?.processingJobs ?? '-'} valueStyle={{ color: '#1677ff' }} prefix={<LoadingOutlined />} /></Card>
+          <Card><Statistic title="Processing" value={stats?.processingJobs ?? '-'} valueStyle={{ color: '#1677ff' }} prefix={<SyncOutlined spin={!!stats?.processingJobs} />} /></Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
           <Card><Statistic title="Success" value={stats?.successJobs ?? '-'} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
