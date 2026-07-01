@@ -15,6 +15,7 @@ namespace MediaUpload.API.Controllers;
 public class UploadController(
     IUploadJobRepository jobRepo,
     SettingsService settings,
+    FileStagingService fileStaging,
     IHubContext<JobHub> hub) : ControllerBase
 {
     [HttpPost]
@@ -27,7 +28,11 @@ public class UploadController(
         var maxFileSize  = await settings.GetLongAsync("upload.max_file_size_bytes", 1572864000);
         var maxFiles     = await settings.GetIntAsync("upload.max_files_per_request", 5);
         var allowedExts  = await settings.GetListAsync("upload.allowed_extensions");
-        var uploadDir    = await settings.GetAsync("nas.upload_dir", "/mnt/nas/uploads");
+        // Files always land in the local staging dir first. If we're currently
+        // inside a configured Time Window, they get promoted straight to NAS
+        // below; otherwise they stay staged until the worker's producer loop
+        // finds an open window and moves them before pushing the job to ERP.
+        var stagingDir   = await fileStaging.GetStagingDirAsync();
 
         if (files.Count == 0)
             return BadRequest(new { error = "No files provided" });
@@ -51,9 +56,9 @@ public class UploadController(
 
             var fileId = Guid.NewGuid().ToString("N");
             var savedName = $"{fileId}{ext}";
-            var savedPath = Path.Combine(uploadDir, savedName);
+            var savedPath = Path.Combine(stagingDir, savedName);
 
-            Directory.CreateDirectory(uploadDir);
+            Directory.CreateDirectory(stagingDir);
             await using (var fs = System.IO.File.Create(savedPath))
                 await file.CopyToAsync(fs);
 
@@ -64,6 +69,11 @@ public class UploadController(
                 System.IO.File.Delete(savedPath);
                 return BadRequest(new { error = $"File '{file.FileName}' không đúng định dạng" });
             }
+
+            // If we're inside a configured Time Window right now, move the file
+            // straight onto NAS; otherwise it stays in staging for the worker to
+            // promote later.
+            savedPath = await fileStaging.PromoteToNasIfWithinWindowAsync(savedPath);
 
             var job = new UploadJob
             {

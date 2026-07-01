@@ -3,6 +3,7 @@ using System;
 using MediaUpload.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MediaUpload.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260701125920_UpdateSystemSettingsDefaults")]
+    partial class UpdateSystemSettingsDefaults
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -85,7 +88,7 @@ namespace MediaUpload.Infrastructure.Migrations
                             CanUpload = true,
                             CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Enabled = true,
-                            HashedSecret = "$2a$12$9ablaBC2kGW/GEpm/Lml3.v.956o.gNZY68.jUg.I9Ps/tvoEIRcO",
+                            HashedSecret = "$2a$12$5jSzye5F9/NFOW9NR9U1qOGL0yz.2MKdsRTyeoozkykcrgbkSgRSy",
                             Name = "admin",
                             TokenPrefix = "MediaUpl"
                         },
@@ -99,7 +102,7 @@ namespace MediaUpload.Infrastructure.Migrations
                             CanUpload = true,
                             CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Enabled = true,
-                            HashedSecret = "$2a$12$9ablaBC2kGW/GEpm/Lml3.v.956o.gNZY68.jUg.I9Ps/tvoEIRcO",
+                            HashedSecret = "$2a$12$5jSzye5F9/NFOW9NR9U1qOGL0yz.2MKdsRTyeoozkykcrgbkSgRSy",
                             Name = "admin (web login)",
                             TokenPrefix = "MediaUpl",
                             Username = "admin"
@@ -208,15 +211,6 @@ namespace MediaUpload.Infrastructure.Migrations
                             Key = "nas.video_path_prefix",
                             UpdatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Value = "/homes/video/uploads/"
-                        },
-                        new
-                        {
-                            Id = 16,
-                            Description = "Thư mục lưu tạm local trước khi chuyển sang NAS (ngoài time window)",
-                            HotReload = true,
-                            Key = "nas.local_staging_dir",
-                            UpdatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Value = "/opt/media-upload/staging"
                         },
                         new
                         {

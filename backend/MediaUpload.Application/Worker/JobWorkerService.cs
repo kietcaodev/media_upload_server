@@ -72,6 +72,7 @@ public class JobWorkerService(
                     var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
                     var timeWindow = scope.ServiceProvider.GetRequiredService<TimeWindowChecker>();
                     var jobRepo = scope.ServiceProvider.GetRequiredService<IUploadJobRepository>();
+                    var fileStaging = scope.ServiceProvider.GetRequiredService<FileStagingService>();
 
                     // Refresh semaphore capacity if max_concurrent changed
                     var maxConcurrent = await settings.GetIntAsync("worker.max_concurrent", 3);
@@ -84,6 +85,17 @@ public class JobWorkerService(
                         foreach (var job in jobs)
                         {
                             if (ct.IsCancellationRequested) break;
+
+                            // Files uploaded outside the window are still sitting in
+                            // local staging – promote them onto NAS now that we're
+                            // inside a window, before the job gets pushed to ERP.
+                            var promotedPath = await fileStaging.PromoteToNasIfWithinWindowAsync(job.SavedPath);
+                            if (promotedPath != job.SavedPath)
+                            {
+                                job.SavedPath = promotedPath;
+                                await jobRepo.UpdateAsync(job);
+                            }
+
                             await _channel.Writer.WriteAsync(job, ct);
                         }
                     }

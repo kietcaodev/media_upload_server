@@ -155,8 +155,9 @@ public class SystemSettingRepository(AppDbContext db) : ISystemSettingRepository
 {
     private static readonly Dictionary<string, string> _defaults = new()
     {
-        ["nas.upload_dir"]               = "/mnt/nas/uploads",
-        ["nas.logs_dir"]                 = "/mnt/nas/logs",
+        ["nas.upload_dir"]               = "/opt/media-upload/uploads",
+        ["nas.local_staging_dir"]        = "/opt/media-upload/staging",
+        ["nas.logs_dir"]                 = "/opt/media-upload/logs",
         ["nas.min_free_space_bytes"]     = "1073741824",
         ["nas.video_path_prefix"]        = "/homes/video/uploads/",
         ["upload.max_file_size_bytes"]   = "1572864000",
@@ -168,7 +169,7 @@ public class SystemSettingRepository(AppDbContext db) : ISystemSettingRepository
         ["worker.max_concurrent"]        = "3",
         ["ratelimit.window_ms"]          = "900000",
         ["ratelimit.max_requests"]       = "20",
-        ["cors.allowed_origins"]         = "http://localhost:5173",
+        ["cors.allowed_origins"]         = "https://103.104.123.126:8443,http://localhost:5173",
         ["system.timezone"]              = "Asia/Ho_Chi_Minh",
     };
 

@@ -10,6 +10,7 @@ public static class ApplicationServiceExtensions
     {
         services.AddScoped<SettingsService>();
         services.AddScoped<TimeWindowChecker>();
+        services.AddScoped<FileStagingService>();
         services.AddScoped<ErpPushService>();
 
         services.AddSingleton<WorkerStateService>();
