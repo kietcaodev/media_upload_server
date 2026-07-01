@@ -395,6 +395,7 @@ step_write_appsettings() {
     "AllowedOrigins": ["https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}"]
   },
   "Logging": {
+    "Directory": "${APP_DIR}/logs",
     "LogLevel": {
       "Default": "Warning",
       "Microsoft.AspNetCore": "Warning"
@@ -481,11 +482,16 @@ Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=${APP_DIR}/api /mnt/nas
+# ${APP_DIR}/logs (KHÔNG phải api/) chứa app.log/error.log – tách khỏi thư mục
+# publish để "dotnet publish" (xoá/ghi lại api/ mỗi lần build) không xoá mất log.
+ReadWritePaths=${APP_DIR}/api ${APP_DIR}/logs /mnt/nas
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    # Thư mục log riêng, tách khỏi api/ (xem giải thích ReadWritePaths ở trên)
+    mkdir -p "${APP_DIR}/logs"
 
     # Permissions
     chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"

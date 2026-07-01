@@ -6,8 +6,40 @@ using MediaUpload.Domain.Interfaces;
 using MediaUpload.API.Hubs;
 using MediaUpload.API.Middleware;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Logging: ghi ra file thật (app-*.log toàn bộ, error-*.log riêng lỗi) bên
+// cạnh Console (giữ nguyên để journalctl vẫn xem được như trước). Thư mục log
+// mặc định nằm NGOÀI ContentRootPath (.../api/../logs) để KHÔNG bị xoá mỗi lần
+// `dotnet publish` ghi đè lại thư mục api/ lúc redeploy. Có thể override bằng
+// đường dẫn tuyệt đối qua config "Logging:Directory" (deploy.sh set sẵn).
+var logDirectory = builder.Configuration["Logging:Directory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "..", "logs");
+Directory.CreateDirectory(logDirectory);
+
+builder.Host.UseSerilog((_, loggerConfig) =>
+{
+    loggerConfig
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File(
+            Path.Combine(logDirectory, "app.log"),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            shared: true)
+        .WriteTo.File(
+            Path.Combine(logDirectory, "error.log"),
+            restrictedToMinimumLevel: LogEventLevel.Error,
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            shared: true);
+});
 
 // ── Services ─────────────────────────────────────────────
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -60,6 +92,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseSerilogRequestLogging();
 app.UseCors();
 app.UseMiddleware<AuthMiddleware>();
 app.UseMiddleware<UploadRateLimitMiddleware>();
