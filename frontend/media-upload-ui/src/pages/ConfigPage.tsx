@@ -99,13 +99,24 @@ function TimeWindowTab() {
 }
 
 // ─────────────────────────────── ERP Config ────────────────────────
+// Gợi ý URL sẵn có cho các công ty đã biết (mang từ server.js cũ sang) – chỉ để
+// điền nhanh, người dùng vẫn có thể sửa/thêm target bất kỳ.
+const ERP_URL_SUGGESTIONS: Record<string, string> = {
+  DND: 'https://locnuoc365.xyz/api/order/upload-videos',
+  ZOMZEM: 'https://zomzem.xyz/api/order/upload-videos',
+  ZOZIN: 'https://erp.zozin.vn/api/order/upload-videos',
+};
+
 function ErpConfigTab() {
   const [data, setData] = useState<ErpEndpointDto[]>([]);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<ErpEndpointDto | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm] = Form.useForm();
+  const [creating, setCreating] = useState(false);
 
-  const load = () => erpApi.list().then(d => { setData(d); if (d.length) setSelected(d[0]); });
+  const load = () => erpApi.list().then(d => { setData(d); if (d.length && !selected) setSelected(d[0]); });
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
@@ -123,32 +134,79 @@ function ErpConfigTab() {
     } finally { setSaving(false); }
   };
 
+  const createTarget = async (vals: any) => {
+    const target = String(vals.target).trim().toUpperCase();
+    setCreating(true);
+    try {
+      const created = await erpApi.upsert({ target, url: vals.url, token: vals.token, enabled: vals.enabled ?? true });
+      message.success(`Đã tạo ERP target ${target}`);
+      setCreateOpen(false);
+      createForm.resetFields();
+      await load();
+      setSelected(created);
+    } finally { setCreating(false); }
+  };
+
   return (
-    <div style={{ display: 'flex', gap: 16 }}>
-      <Card style={{ minWidth: 180 }} size="small" title="ERP Targets">
-        {data.map(e => (
-          <div key={e.id} style={{ padding: '8px 0', cursor: 'pointer', fontWeight: selected?.id === e.id ? 600 : 400 }}
-            onClick={() => setSelected(e)}>
-            <Tag color={e.enabled ? 'green' : 'red'}>{e.target}</Tag>
-          </div>
-        ))}
-      </Card>
-      {selected && (
-        <Card title={`Cấu hình ${selected.target}`} style={{ flex: 1 }} size="small">
-          <Form form={form} layout="vertical" onFinish={save}>
-            <Form.Item name="url" label="URL" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="token" label="Token mới (bỏ trống = giữ nguyên)" extra={`Hiện tại: ${selected.tokenPrefix}`}>
-              <Input.Password placeholder="Nhập token mới để thay thế" />
-            </Form.Item>
-            <Form.Item name="enabled" label="Enabled" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving}>Lưu</Button>
-          </Form>
+    <div>
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)} style={{ marginBottom: 16 }}>
+        Thêm ERP Target
+      </Button>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <Card style={{ minWidth: 180 }} size="small" title="ERP Targets">
+          {data.length === 0 && <Text type="secondary">Chưa có target nào – bấm "Thêm ERP Target"</Text>}
+          {data.map(e => (
+            <div key={e.id} style={{ padding: '8px 0', cursor: 'pointer', fontWeight: selected?.id === e.id ? 600 : 400 }}
+              onClick={() => setSelected(e)}>
+              <Tag color={e.enabled ? 'green' : 'red'}>{e.target}</Tag>
+            </div>
+          ))}
         </Card>
-      )}
+        {selected && (
+          <Card title={`Cấu hình ${selected.target}`} style={{ flex: 1 }} size="small">
+            <Form form={form} layout="vertical" onFinish={save}>
+              <Form.Item name="url" label="URL" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="token" label="Token mới (bỏ trống = giữ nguyên)" extra={`Hiện tại: ${selected.tokenPrefix}`}>
+                <Input.Password placeholder="Nhập token mới để thay thế" />
+              </Form.Item>
+              <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={saving}>Lưu</Button>
+            </Form>
+          </Card>
+        )}
+      </div>
+
+      <Modal title="Thêm ERP Target mới" open={createOpen} onCancel={() => setCreateOpen(false)}
+        onOk={() => createForm.submit()} confirmLoading={creating} destroyOnClose>
+        <Form form={createForm} layout="vertical" onFinish={createTarget} initialValues={{ enabled: true }}>
+          <Form.Item name="target" label="Mã công ty (target)" rules={[{ required: true }]}
+            extra="Viết hoa tự động, vd: DND, ZOMZEM, ZOZIN hoặc mã công ty mới">
+            <Input placeholder="Vd: DND" />
+          </Form.Item>
+          <Space size={4} style={{ marginBottom: 12 }} wrap>
+            <Text type="secondary">Gợi ý:</Text>
+            {Object.entries(ERP_URL_SUGGESTIONS).map(([key, url]) => (
+              <Tag key={key} style={{ cursor: 'pointer' }}
+                onClick={() => createForm.setFieldsValue({ target: key, url })}>
+                {key}
+              </Tag>
+            ))}
+          </Space>
+          <Form.Item name="url" label="URL" rules={[{ required: true }]}>
+            <Input placeholder="https://..." />
+          </Form.Item>
+          <Form.Item name="token" label="Token" rules={[{ required: true }]}>
+            <Input.Password placeholder="Token ERP cấp cho công ty này" />
+          </Form.Item>
+          <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
