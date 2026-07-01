@@ -119,6 +119,8 @@ public class SystemSettingsController(
     {
         foreach (var kv in req.Updates)
             await settingsService.SetAsync(kv.Key, kv.Value);
+
+        await RefreshRuntimeCacheIfNeeded(req.Updates.Keys);
         return Ok(new { updated = req.Updates.Keys });
     }
 
@@ -128,6 +130,28 @@ public class SystemSettingsController(
         await settingRepo.ResetToDefaultAsync(key);
         settingsService.Invalidate(key);
         var val = await settingRepo.GetAsync(key);
+
+        await RefreshRuntimeCacheIfNeeded([key]);
         return Ok(new { key, value = val });
+    }
+
+    /// <summary>
+    /// CORS origin checks and rate limiting run on the hot request path and
+    /// read from RuntimeConfigCache instead of awaiting the DB on every
+    /// request. Keep that cache in sync the moment an admin changes these
+    /// keys via the System Settings UI.
+    /// </summary>
+    private async Task RefreshRuntimeCacheIfNeeded(IEnumerable<string> changedKeys)
+    {
+        var keys = changedKeys as ICollection<string> ?? changedKeys.ToList();
+
+        if (keys.Contains("cors.allowed_origins"))
+            MediaUpload.API.Middleware.RuntimeConfigCache.SetCorsAllowedOrigins(
+                await settingsService.GetListAsync("cors.allowed_origins"));
+
+        if (keys.Contains("ratelimit.window_ms") || keys.Contains("ratelimit.max_requests"))
+            MediaUpload.API.Middleware.RuntimeConfigCache.SetRateLimit(
+                await settingsService.GetIntAsync("ratelimit.window_ms", 900_000),
+                await settingsService.GetIntAsync("ratelimit.max_requests", 20));
     }
 }

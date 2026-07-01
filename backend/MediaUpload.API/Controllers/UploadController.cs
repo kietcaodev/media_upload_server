@@ -54,8 +54,16 @@ public class UploadController(
             var savedPath = Path.Combine(uploadDir, savedName);
 
             Directory.CreateDirectory(uploadDir);
-            await using var fs = System.IO.File.Create(savedPath);
-            await file.CopyToAsync(fs);
+            await using (var fs = System.IO.File.Create(savedPath))
+                await file.CopyToAsync(fs);
+
+            // Verify actual file content (magic bytes), not just the extension,
+            // so renaming a disallowed file (e.g. .exe -> .mp4) can't bypass the allow-list.
+            if (!await FileSignatureValidator.IsValidAsync(savedPath))
+            {
+                System.IO.File.Delete(savedPath);
+                return BadRequest(new { error = $"File '{file.FileName}' không đúng định dạng" });
+            }
 
             var job = new UploadJob
             {
