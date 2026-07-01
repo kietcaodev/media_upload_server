@@ -2,6 +2,10 @@ node_modules/
 uploads/
 logs/
 
+# ── Legacy Node.js prototype – thay thế hoàn toàn bởi backend .NET, chỉ giữ
+#    lại cục bộ để tham khảo, không commit ──
+server.js
+
 # ── Môi trường (chứa token, password – KHÔNG commit) ──
 .env
 .env.local
