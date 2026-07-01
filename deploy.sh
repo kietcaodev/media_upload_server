@@ -59,6 +59,12 @@ APP_DIR="/opt/media-upload"
 API_PORT="5000"                    # LƯU Ý: kiểm tra port này chưa bị app khác dùng (xem preflight check bên dưới)
 DOMAIN=""                          # ví dụ: upload.company.com – để trống nếu chỉ dùng IP (không có domain riêng)
 BASE_PATH="/media-upload"          # path prefix khi dùng chung 1 IP/domain với site/app khác (vd: http://IP/media-upload). Để "" nếu có domain/subdomain riêng chạy ở "/"
+NGINX_PUBLIC_PORT="8443"           # QUAN TRỌNG: port 80/443 mặc định trên VPS này đã bị chiếm bởi
+                                    # default_server của app khác (vd: FusionPBX) – khi truy cập bằng
+                                    # IP trần (không có domain riêng), Nginx sẽ luôn ưu tiên
+                                    # default_server đó bất kể site của mình cấu hình gì. Dùng port
+                                    # riêng để tránh đụng vào cấu hình default_server có sẵn (an toàn
+                                    # cho các app/dịch vụ khác đang chạy chung server).
 
 # Tên service/site – đặt riêng biệt để KHÔNG trùng với service khác có thể đã
 # tồn tại trên VPS (vd: một app Node.js cũ tên "media-upload-api"). Đổi tên ở
@@ -376,7 +382,7 @@ step_write_appsettings() {
     "AesKey": "${AES_KEY}"
   },
   "Cors": {
-    "AllowedOrigins": ["https://${PUBLIC_HOST}", "http://${PUBLIC_HOST}"]
+    "AllowedOrigins": ["https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}"]
   },
   "Logging": {
     "LogLevel": {
@@ -509,15 +515,14 @@ upstream mediaupload_dotnet_api {
     keepalive 32;
 }
 
-# HTTP – redirect toàn bộ sang HTTPS
+# LƯU Ý: KHÔNG dùng port 80/443 mặc định – VPS này đã có site khác (vd:
+# FusionPBX) giữ default_server trên các port đó. Khi truy cập bằng IP trần
+# (không có domain riêng trỏ về), Nginx luôn ưu tiên default_server bất kể
+# server_name mình khai báo gì, nên site này sẽ không bao giờ được chọn nếu
+# dùng chung port 80/443. Dùng hẳn 1 port riêng (${NGINX_PUBLIC_PORT}) để
+# tránh đụng vào cấu hình default_server có sẵn của app khác.
 server {
-    listen 80;
-    server_name ${server_name};
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl;
+    listen ${NGINX_PUBLIC_PORT} ssl;
     server_name ${server_name};
 
     ssl_certificate     ${ssl_dir}/fullchain.pem;
@@ -626,12 +631,13 @@ echo ""
 echo "══════════════════════════════════════════════════════"
 echo -e " ${GREEN}Deploy thành công!${NC}"
 echo "══════════════════════════════════════════════════════"
-echo " URL:          https://${PUBLIC_HOST}${BASE_PATH}/"
-echo " API:          https://${PUBLIC_HOST}${BASE_PATH}/api"
+echo " URL:          https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}${BASE_PATH}/"
+echo " API:          https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}${BASE_PATH}/api"
 echo " Swagger:      http://localhost:${API_PORT}/swagger  (chỉ từ server)"
 echo " Logs:         journalctl -u ${SERVICE_NAME} -f"
 echo " Checkpoint:   ${STATE_FILE}  (xoá hoặc dùng --reset để chạy lại từ đầu)"
 echo ""
+warn "Port ${NGINX_PUBLIC_PORT} dùng riêng để tránh đụng default_server có sẵn (vd FusionPBX) trên port 80/443 – đảm bảo firewall (ufw/iptables/nhà cung cấp VPS) cho phép port này."
 warn "Chứng chỉ TLS là self-signed (không có domain để xin Let's Encrypt) – trình duyệt sẽ cảnh báo 'Not secure/Not private' lần đầu, bấm Advanced → Proceed để tiếp tục."
 echo ""
 echo " ┌─ Thông tin bảo mật (LƯU LẠI NGAY) ─────────────────"
