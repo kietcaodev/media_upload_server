@@ -596,6 +596,41 @@ EOF
 run_step "setup_nginx" step_setup_nginx
 
 # =============================================================================
+# BƯỚC 9b: Mở port ${NGINX_PUBLIC_PORT} trên iptables
+# =============================================================================
+step_setup_firewall() {
+    log "Mở port ${NGINX_PUBLIC_PORT}/tcp trên iptables..."
+
+    if ! command -v iptables &>/dev/null; then
+        warn "Không tìm thấy iptables trên hệ thống – bỏ qua bước này."
+        return 0
+    fi
+
+    if iptables -C INPUT -p tcp --dport "${NGINX_PUBLIC_PORT}" -j ACCEPT 2>/dev/null; then
+        log "Port ${NGINX_PUBLIC_PORT}/tcp đã được mở sẵn trên iptables"
+    else
+        # Chèn lên ĐẦU chain INPUT (không dùng -A append) để rule này có hiệu
+        # lực TRƯỚC bất kỳ rule DROP/REJECT catch-all nào ở cuối chain – nếu
+        # chỉ append, rule ACCEPT có thể không bao giờ được match tới.
+        iptables -I INPUT 1 -p tcp --dport "${NGINX_PUBLIC_PORT}" -j ACCEPT
+        log "Đã mở port ${NGINX_PUBLIC_PORT}/tcp trên iptables"
+    fi
+
+    # Lưu rule lại để không mất sau khi reboot VPS
+    if command -v netfilter-persistent &>/dev/null; then
+        netfilter-persistent save &>/dev/null || true
+        log "Đã lưu iptables rules qua netfilter-persistent"
+    elif [[ -d /etc/iptables ]] && command -v iptables-save &>/dev/null; then
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+        log "Đã lưu iptables rules vào /etc/iptables/rules.v4"
+    else
+        warn "Chưa cài công cụ persist iptables (gói iptables-persistent) – rule sẽ MẤT sau khi reboot VPS."
+        warn "Cài persist: apt-get install -y iptables-persistent"
+    fi
+}
+run_step "setup_firewall" step_setup_firewall
+
+# =============================================================================
 # BƯỚC 10: Health check – xác minh deploy thành công
 # =============================================================================
 step_health_check() {
@@ -637,7 +672,7 @@ echo " Swagger:      http://localhost:${API_PORT}/swagger  (chỉ từ server)"
 echo " Logs:         journalctl -u ${SERVICE_NAME} -f"
 echo " Checkpoint:   ${STATE_FILE}  (xoá hoặc dùng --reset để chạy lại từ đầu)"
 echo ""
-warn "Port ${NGINX_PUBLIC_PORT} dùng riêng để tránh đụng default_server có sẵn (vd FusionPBX) trên port 80/443 – đảm bảo firewall (ufw/iptables/nhà cung cấp VPS) cho phép port này."
+warn "Port ${NGINX_PUBLIC_PORT} dùng riêng để tránh đụng default_server có sẵn (vd FusionPBX) trên port 80/443 – script đã tự mở port này trên iptables. Nếu nhà cung cấp VPS còn firewall riêng (security group/cloud firewall) thì cần mở thêm ở đó."
 warn "Chứng chỉ TLS là self-signed (không có domain để xin Let's Encrypt) – trình duyệt sẽ cảnh báo 'Not secure/Not private' lần đầu, bấm Advanced → Proceed để tiếp tục."
 echo ""
 echo " ┌─ Thông tin bảo mật (LƯU LẠI NGAY) ─────────────────"
