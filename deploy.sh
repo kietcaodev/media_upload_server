@@ -462,7 +462,12 @@ EOF
 
     # Permissions
     chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
-    chmod 750 "${APP_DIR}"
+    # LƯU Ý: 755 (không phải 750) – Nginx chạy bằng user "www-data", khác
+    # user/group "${APP_USER}", nên cần quyền "x" (traverse) trên ${APP_DIR}
+    # để đọc được ${APP_DIR}/ui/* qua "alias". Bí mật thật sự (appsettings,
+    # connection string, AES key) đã được chmod 640 ở file cụ thể nên vẫn an
+    # toàn dù thư mục cha world-readable.
+    chmod 755 "${APP_DIR}"
 
     systemctl daemon-reload
     systemctl enable "${SERVICE_NAME}"
