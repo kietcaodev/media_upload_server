@@ -387,6 +387,13 @@ run_step "write_appsettings" step_write_appsettings
 # =============================================================================
 step_run_migration() {
     log "Chạy EF database migration..."
+
+    # Dừng service cũ (nếu đang chạy/restart-loop) để giải phóng ${API_PORT} –
+    # tránh xung đột bind port với tiến trình tạm thời chạy ở đây chỉ để kích
+    # hoạt migration. setup_systemd ở bước sau sẽ khởi động lại service đàng
+    # hoàng với build mới nhất.
+    systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+
     ASPNETCORE_ENVIRONMENT=Production \
         ConnectionStrings__Default="${CONN_STRING}" \
         Encryption__AesKey="${AES_KEY}" \
