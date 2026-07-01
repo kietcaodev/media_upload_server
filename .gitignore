@@ -45,8 +45,8 @@ frontend/**/.env.local
 frontend/**/.env.*.local
 
 # ── npm / package manager ──
-package-lock.json
-frontend/**/package-lock.json
+# LƯU Ý: package-lock.json PHẢI được commit – deploy.sh dùng "npm ci" (yêu
+# cầu bắt buộc có lockfile) để cài đặt reproducible trên VPS.
 
 # ── Node (root level – từ project Node.js cũ) ──
 node_modules/
