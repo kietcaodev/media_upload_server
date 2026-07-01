@@ -373,6 +373,16 @@ step_write_appsettings() {
     log "Ghi cấu hình production..."
     mkdir -p "${APP_DIR}/api"
 
+    # QUAN TRỌNG: nếu CONN_STRING/AES_KEY rỗng (vd: biến bị mất do lỗi ở bước
+    # sinh secrets phía trên), ghi thẳng ra file sẽ tạo ra appsettings.Production.json
+    # với "ConnectionStrings.Default": "" – Npgsql sẽ báo lỗi rất khó hiểu lúc
+    # runtime ("The ConnectionString property has not been initialized") thay vì
+    # báo lỗi rõ ràng ngay tại đây. => Chặn sớm.
+    [[ "$CONN_STRING" == *"Password="* && -n "$DB_PASS" ]] || \
+        err "CONN_STRING/DB_PASS rỗng hoặc không hợp lệ – dừng lại TRƯỚC khi ghi appsettings.Production.json (tránh tạo cấu hình DB hỏng khiến app crash toàn bộ lúc chạy)."
+    [[ -n "$AES_KEY" ]] || \
+        err "AES_KEY rỗng – dừng lại TRƯỚC khi ghi appsettings.Production.json."
+
     cat > "${APP_DIR}/api/appsettings.Production.json" <<EOF
 {
   "ConnectionStrings": {
@@ -393,7 +403,18 @@ step_write_appsettings() {
   "AllowedHosts": "*"
 }
 EOF
+    # Chủ sở hữu file phải là APP_USER ngay tại đây (không chỉ trông chờ vào
+    # step_setup_systemd chạy chown -R sau đó) – nếu step đó đã checkpoint xong
+    # từ trước, một lần ghi lại appsettings.Production.json (vd: sau redeploy)
+    # sẽ để lại file thuộc về root, khiến service chạy bằng APP_USER không đọc
+    # được (chmod 640 + owner root) và .NET âm thầm coi như thiếu cấu hình.
+    chown "${APP_USER}:${APP_USER}" "${APP_DIR}/api/appsettings.Production.json" 2>/dev/null || true
     chmod 640 "${APP_DIR}/api/appsettings.Production.json"
+
+    # Sanity check cuối: đảm bảo file vừa ghi thực sự chứa connection string –
+    # phát hiện sớm nếu ghi file thất bại một phần (disk full, quyền thư mục...).
+    grep -q "Password=" "${APP_DIR}/api/appsettings.Production.json" || \
+        err "appsettings.Production.json vừa ghi KHÔNG chứa connection string hợp lệ – kiểm tra quyền ghi ${APP_DIR}/api/."
 }
 run_step "write_appsettings" step_write_appsettings
 
