@@ -29,6 +29,15 @@ export DOTNET_NOLOGO=1
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 export NUGET_XMLDOC_MODE=skip
 
+# QUAN TRỌNG: Tắt MSBuild node reuse. Nếu một lần restore/build trước đây bị
+# ngắt giữa chừng (kill, mất SSH, timeout...), tiến trình "MSBuild node" nền
+# (dotnet .../MSBuild.dll /nodeReuse:true) có thể vẫn còn sống (mồ côi) rất
+# lâu sau đó. Lần build kế tiếp sẽ cố bắt tay qua named pipe với node mồ côi
+# này để tái sử dụng – nếu node đó không phản hồi, restore/build MỚI sẽ TREO
+# VÔ THỜI HẠN mà không in ra bất kỳ log nào (CPU gần như 0%). Đây là nguyên
+# nhân phổ biến nhất gây treo hàng giờ, không liên quan tới mạng.
+export MSBUILDDISABLENODEREUSE=1
+
 # QUAN TRỌNG: Mặc định NuGet kiểm tra chữ ký gói qua CRL/OCSP ONLINE tới các
 # máy chủ ngoài NuGet (vd: crl3.digicert.com, ocsp.digicert.com...). Nếu VPS
 # chặn/drop (không reject) các kết nối này, mỗi lần kiểm tra sẽ TREO tới khi
@@ -210,6 +219,13 @@ step_build_backend() {
     log "Build .NET backend..."
     cd "$BACKEND_DIR"
 
+    # Dọn mọi MSBuild/dotnet build-server node cũ còn sống (mồ côi từ lần chạy
+    # trước bị ngắt giữa chừng) – tránh restore/build mới bị treo vô thời hạn
+    # khi cố bắt tay với node cũ không phản hồi.
+    log "Dọn dẹp MSBuild build-server cũ (nếu có)..."
+    pkill -9 -f 'MSBuild.dll.*nodemode' 2>/dev/null || true
+    dotnet build-server shutdown &>/dev/null || true
+
     # Kiểm tra nhanh kết nối tới NuGet trước khi restore. `dotnet restore` bình
     # thường chỉ mất vài chục giây; nếu treo hàng giờ thì gần như luôn là do
     # mạng/DNS/IPv6/proxy chứ KHÔNG phải do dự án – kiểm tra sớm để biết ngay.
@@ -234,11 +250,11 @@ step_build_backend() {
     local restore_log="/tmp/dotnet-restore-$(date +%s).log"
     log "Restore NuGet packages (timeout ${RESTORE_TIMEOUT_SECS}s, log: ${restore_log})..."
     set +e
-    timeout "${RESTORE_TIMEOUT_SECS}" dotnet restore MediaUpload.slnx -v minimal 2>&1 | tee "$restore_log"
+    timeout "${RESTORE_TIMEOUT_SECS}" dotnet restore MediaUpload.slnx -v minimal -nodeReuse:false 2>&1 | tee "$restore_log"
     local restore_status=${PIPESTATUS[0]}
     set -e
     if [[ $restore_status -eq 124 ]]; then
-        err "dotnet restore vượt quá ${RESTORE_TIMEOUT_SECS}s và bị hủy. KHÔNG bình thường – gần như chắc chắn do mạng/NuGet feed, xem gợi ý ở trên và log: ${restore_log}"
+        err "dotnet restore vượt quá ${RESTORE_TIMEOUT_SECS}s và bị hủy. KHÔNG bình thường – gần như chắc chắn do MSBuild node reuse bị treo (xem 'ps aux | grep MSBuild', kill node mồ côi) hoặc mạng/NuGet feed. Xem log: ${restore_log}"
     elif [[ $restore_status -ne 0 ]]; then
         err "dotnet restore thất bại (exit ${restore_status}). Xem log: ${restore_log}"
     fi
@@ -247,7 +263,8 @@ step_build_backend() {
         -c Release \
         -o "${APP_DIR}/api" \
         --no-restore \
-        -v quiet
+        -v quiet \
+        -nodeReuse:false
 
     log "Publish xong → ${APP_DIR}/api"
 }
