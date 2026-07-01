@@ -57,7 +57,8 @@ export NUGET_CERT_REVOCATION_MODE=offline
 APP_USER="mediaupload"
 APP_DIR="/opt/media-upload"
 API_PORT="5000"                    # LƯU Ý: kiểm tra port này chưa bị app khác dùng (xem preflight check bên dưới)
-DOMAIN=""                          # ví dụ: upload.company.com – để trống nếu dùng IP
+DOMAIN=""                          # ví dụ: upload.company.com – để trống nếu chỉ dùng IP (không có domain riêng)
+BASE_PATH="/media-upload"          # path prefix khi dùng chung 1 IP/domain với site/app khác (vd: http://IP/media-upload). Để "" nếu có domain/subdomain riêng chạy ở "/"
 
 # Tên service/site – đặt riêng biệt để KHÔNG trùng với service khác có thể đã
 # tồn tại trên VPS (vd: một app Node.js cũ tên "media-upload-api"). Đổi tên ở
@@ -73,7 +74,9 @@ AES_KEY=""                         # để trống → script tự sinh ngẫu n
 
 RESTORE_TIMEOUT_SECS=900            # dotnet restore phải xong trong 15 phút, quá thì báo lỗi rõ ràng
 
-FRONTEND_API_URL="http://localhost:${API_PORT}"  # URL API mà browser gọi tới
+# URL API mà browser gọi tới – dùng đường dẫn TƯƠNG ĐỐI (không hardcode scheme/host)
+# để hoạt động đúng dù truy cập qua IP hay domain, http hay https.
+FRONTEND_API_URL="${BASE_PATH}"
 # ─────────────────────────────────────────────────────────────────────────────
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -335,6 +338,7 @@ step_build_frontend() {
     # Ghi .env.production với URL API thực
     cat > .env.production <<EOF
 VITE_API_URL=${FRONTEND_API_URL}
+VITE_BASE_PATH=${BASE_PATH}
 EOF
 
     # KHÔNG dùng --silent: flag này set loglevel=silent, nuốt luôn cả log lỗi
@@ -350,6 +354,11 @@ EOF
     log "Frontend build xong → ${APP_DIR}/ui"
 }
 run_step "build_frontend" step_build_frontend
+
+# Xác định host công khai (domain nếu có, không thì tự dò IP public) – dùng cho
+# CORS AllowedOrigins và Common Name của self-signed TLS cert ở bước setup_nginx.
+PUBLIC_IP="$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
+PUBLIC_HOST="${DOMAIN:-$PUBLIC_IP}"
 
 # =============================================================================
 # BƯỚC 6: Ghi appsettings.Production.json
@@ -367,7 +376,7 @@ step_write_appsettings() {
     "AesKey": "${AES_KEY}"
   },
   "Cors": {
-    "AllowedOrigins": ["${FRONTEND_API_URL}"]
+    "AllowedOrigins": ["https://${PUBLIC_HOST}", "http://${PUBLIC_HOST}"]
   },
   "Logging": {
     "LogLevel": {
@@ -470,19 +479,46 @@ step_setup_nginx() {
 
     local server_name="${DOMAIN:-_}"
 
+    # ── TLS: chỉ có IP, không có domain → không thể xin cert Let's Encrypt
+    # (cần domain để xác thực HTTP-01/DNS-01). Dùng chứng chỉ self-signed –
+    # trình duyệt sẽ cảnh báo "không an toàn/Not private" lần đầu truy cập,
+    # người dùng cần bấm "Advanced → Proceed". Nếu sau này có domain trỏ về,
+    # đổi sang certbot (Let's Encrypt) để có cert được tin cậy thật sự.
+    local ssl_dir="/etc/nginx/ssl/${NGINX_SITE_NAME}"
+    mkdir -p "$ssl_dir"
+    if [[ ! -f "${ssl_dir}/fullchain.pem" ]]; then
+        log "Tạo self-signed TLS cert cho ${PUBLIC_HOST} (không có domain nên không thể dùng Let's Encrypt)..."
+        local san_entry="IP:${PUBLIC_HOST}"
+        [[ "$PUBLIC_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || san_entry="DNS:${PUBLIC_HOST}"
+        openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+            -keyout "${ssl_dir}/privkey.pem" \
+            -out "${ssl_dir}/fullchain.pem" \
+            -subj "/CN=${PUBLIC_HOST}" \
+            -addext "subjectAltName=${san_entry}" 2>/dev/null
+        chmod 600 "${ssl_dir}/privkey.pem"
+    fi
+
     cat > "/etc/nginx/sites-available/${NGINX_SITE_NAME}" <<EOF
 upstream mediaupload_dotnet_api {
     server 127.0.0.1:${API_PORT};
     keepalive 32;
 }
 
+# HTTP – redirect toàn bộ sang HTTPS
 server {
     listen 80;
     server_name ${server_name};
+    return 301 https://\$host\$request_uri;
+}
 
-    # Frontend SPA
-    root ${APP_DIR}/ui;
-    index index.html;
+server {
+    listen 443 ssl;
+    server_name ${server_name};
+
+    ssl_certificate     ${ssl_dir}/fullchain.pem;
+    ssl_certificate_key ${ssl_dir}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
 
     # Tăng giới hạn upload (phải >= max_file_size trong system settings)
     client_max_body_size 1600m;
@@ -494,16 +530,21 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml;
 
-    # Static assets – cache dài
-    location ~* \.(js|css|png|svg|ico|woff2?)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        try_files \$uri =404;
+    # Root "/" → chuyển hướng vào app dưới path prefix ${BASE_PATH}
+    location = / {
+        return 302 ${BASE_PATH}/;
     }
 
-    # API – proxy tới .NET
-    location /api/ {
-        proxy_pass         http://mediaupload_dotnet_api;
+    # Static assets của SPA – cache dài
+    location ~* ^${BASE_PATH}/(.*\.(?:js|css|png|svg|ico|woff2?))\$ {
+        alias ${APP_DIR}/ui/\$1;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # API – proxy tới .NET (giữ nguyên path /api/... khi forward)
+    location ${BASE_PATH}/api/ {
+        proxy_pass         http://mediaupload_dotnet_api/api/;
         proxy_http_version 1.1;
         proxy_set_header   Host              \$host;
         proxy_set_header   X-Real-IP         \$remote_addr;
@@ -513,23 +554,25 @@ server {
     }
 
     # SignalR WebSocket
-    location /hubs/ {
-        proxy_pass         http://mediaupload_dotnet_api;
+    location ${BASE_PATH}/hubs/ {
+        proxy_pass         http://mediaupload_dotnet_api/hubs/;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    \$http_upgrade;
         proxy_set_header   Connection "upgrade";
         proxy_set_header   Host       \$host;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
         proxy_cache_bypass \$http_upgrade;
     }
 
     # Health check
-    location /health {
-        proxy_pass http://mediaupload_dotnet_api;
+    location ${BASE_PATH}/health {
+        proxy_pass http://mediaupload_dotnet_api/health;
     }
 
-    # SPA fallback – React Router
-    location / {
-        try_files \$uri \$uri/ /index.html;
+    # SPA – trang chính + client-side fallback
+    location ${BASE_PATH}/ {
+        alias ${APP_DIR}/ui/;
+        try_files \$uri \$uri/ ${BASE_PATH}/index.html;
     }
 }
 EOF
@@ -574,17 +617,17 @@ step_health_check
 # =============================================================================
 # HOÀN TẤT
 # =============================================================================
-PUBLIC_IP=$(curl -sf https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
-
 echo ""
 echo "══════════════════════════════════════════════════════"
 echo -e " ${GREEN}Deploy thành công!${NC}"
 echo "══════════════════════════════════════════════════════"
-echo " URL:          http://${DOMAIN:-$PUBLIC_IP}"
-echo " API:          http://${DOMAIN:-$PUBLIC_IP}/api"
+echo " URL:          https://${PUBLIC_HOST}${BASE_PATH}/"
+echo " API:          https://${PUBLIC_HOST}${BASE_PATH}/api"
 echo " Swagger:      http://localhost:${API_PORT}/swagger  (chỉ từ server)"
 echo " Logs:         journalctl -u ${SERVICE_NAME} -f"
 echo " Checkpoint:   ${STATE_FILE}  (xoá hoặc dùng --reset để chạy lại từ đầu)"
+echo ""
+warn "Chứng chỉ TLS là self-signed (không có domain để xin Let's Encrypt) – trình duyệt sẽ cảnh báo 'Not secure/Not private' lần đầu, bấm Advanced → Proceed để tiếp tục."
 echo ""
 echo " ┌─ Thông tin bảo mật (LƯU LẠI NGAY) ─────────────────"
 echo " │  DB User:       ${DB_USER}"
