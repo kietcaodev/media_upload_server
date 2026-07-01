@@ -29,6 +29,16 @@ export DOTNET_NOLOGO=1
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 export NUGET_XMLDOC_MODE=skip
 
+# QUAN TRỌNG: Mặc định NuGet kiểm tra chữ ký gói qua CRL/OCSP ONLINE tới các
+# máy chủ ngoài NuGet (vd: crl3.digicert.com, ocsp.digicert.com...). Nếu VPS
+# chặn/drop (không reject) các kết nối này, mỗi lần kiểm tra sẽ TREO tới khi
+# hết timeout TCP – có thể gây ra hiện tượng "dotnet restore" treo hàng phút
+# mà KHÔNG in ra bất kỳ log nào, dù kết nối tới api.nuget.org vẫn bình thường.
+# => Tắt kiểm tra revocation online là cách khắc phục tiêu chuẩn cho môi
+#    trường mạng hạn chế (không ảnh hưởng tới tính toàn vẹn của gói, vẫn xác
+#    thực chữ ký – chỉ bỏ qua bước kiểm tra chứng chỉ có bị thu hồi hay không).
+export NUGET_CERT_REVOCATION_MODE=offline
+
 # ── Cấu hình – THAY ĐỔI TRƯỚC KHI CHẠY ───────────────────────────────────────
 APP_USER="mediaupload"
 APP_DIR="/opt/media-upload"
@@ -211,6 +221,14 @@ step_build_backend() {
         warn "  Kiểm tra DNS:      cat /etc/resolv.conf ; getent hosts api.nuget.org"
         warn "  Nghi ngờ IPv6 bị chặn/không route: thử tắt tạm để test:"
         warn "      sysctl -w net.ipv6.conf.all.disable_ipv6=1"
+    fi
+
+    # Nếu máy chỉ có IPv6 link-local (không có route ra ngoài) thì tắt hẳn
+    # IPv6 để tránh mọi lookup/connect kép (dual-stack) không cần thiết khi
+    # restore/publish gọi ra ngoài. An toàn vì IPv6 lúc này vốn không dùng được.
+    if ! ip -6 route show default &>/dev/null; then
+        warn "Không có IPv6 default route → tắt IPv6 tạm thời để tránh trễ do dual-stack."
+        sysctl -w net.ipv6.conf.all.disable_ipv6=1 &>/dev/null || true
     fi
 
     local restore_log="/tmp/dotnet-restore-$(date +%s).log"
