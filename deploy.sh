@@ -227,8 +227,14 @@ run_step "create_user" step_create_user
 # =============================================================================
 step_setup_database() {
     log "Cấu hình PostgreSQL..."
-    sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 || \
+    if sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+        # User đã tồn tại (vd: từ lần deploy trước) – LUÔN đồng bộ lại password
+        # theo DB_PASS hiện tại trong secrets, tránh lệch mật khẩu gây
+        # "password authentication failed" khi secrets bị tái tạo/khác lần trước.
+        sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+    else
         sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+    fi
 
     sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || \
         sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
@@ -292,6 +298,15 @@ step_build_backend() {
     # CŨ vẫn còn nằm lại và có thể bị load nhầm, gây lỗi khó hiểu như
     # TypeLoadException dù code/csproj đã sửa đúng. => Luôn dọn sạch thư mục
     # output trước khi publish để đảm bảo không còn DLL mồ côi.
+    # Lưu ý: appsettings.Production.json KHÔNG phải do dotnet publish tạo ra
+    # (do step write_appsettings ghi riêng) – backup/restore lại để không mất
+    # cấu hình thật (AES key, connection string) khi step đó bị bỏ qua do đã
+    # checkpoint xong.
+    local appsettings_backup=""
+    if [[ -f "${APP_DIR}/api/appsettings.Production.json" ]]; then
+        appsettings_backup=$(mktemp)
+        cp "${APP_DIR}/api/appsettings.Production.json" "$appsettings_backup"
+    fi
     rm -rf "${APP_DIR}/api"
 
     dotnet publish MediaUpload.API/MediaUpload.API.csproj \
@@ -300,6 +315,11 @@ step_build_backend() {
         --no-restore \
         -v quiet \
         -nodeReuse:false
+
+    if [[ -n "$appsettings_backup" ]]; then
+        cp "$appsettings_backup" "${APP_DIR}/api/appsettings.Production.json"
+        rm -f "$appsettings_backup"
+    fi
 
     log "Publish xong → ${APP_DIR}/api"
 }
@@ -374,6 +394,15 @@ step_run_migration() {
 
     local api_pid=$!
     sleep 8  # Chờ migrate xong rồi tắt
+
+    if ! kill -0 "$api_pid" 2>/dev/null; then
+        # Process đã tự thoát TRƯỚC khi ta kill – app khoẻ mạnh phải vẫn đang
+        # chạy (chờ request) sau 8s, nên đây gần như chắc chắn là crash
+        # (xem log Unhandled exception phía trên để biết nguyên nhân thật).
+        wait "$api_pid" 2>/dev/null || true
+        err "App thoát bất thường khi chạy migration – xem log 'Unhandled exception' phía trên. Migration CHƯA chắc đã áp dụng."
+    fi
+
     kill $api_pid 2>/dev/null || true
     wait $api_pid 2>/dev/null || true
     log "Migration hoàn tất"
