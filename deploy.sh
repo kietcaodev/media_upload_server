@@ -22,6 +22,11 @@
 
 set -euo pipefail
 
+# In rõ dòng/lệnh gây lỗi khi script thoát bất thường do "set -e" – tránh tình
+# trạng script thoát im lặng không rõ nguyên nhân (vd: lệnh con trả về khác 0
+# nhưng không có message).
+trap 'echo -e "\033[0;31m[✗]\033[0m Script dừng bất thường ở dòng ${LINENO}, lệnh: ${BASH_COMMAND}"' ERR
+
 # Giảm rủi ro "dotnet" bị chậm/treo ở lần chạy đầu tiên (First Time Experience,
 # telemetry, xml-doc extraction) – KHÔNG liên quan tới mạng nhưng vẫn nên tắt.
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
@@ -304,7 +309,11 @@ step_build_frontend() {
 VITE_API_URL=${FRONTEND_API_URL}
 EOF
 
-    npm ci --silent
+    # KHÔNG dùng --silent: flag này set loglevel=silent, nuốt luôn cả log lỗi
+    # thật của npm khi cài đặt fail (script khi đó chỉ exit im lặng không rõ
+    # nguyên nhân do set -e). Dùng --no-fund --no-audit để giảm bớt noise mà
+    # vẫn giữ lại log lỗi.
+    npm ci --no-fund --no-audit
     npm run build
 
     # Copy dist vào app dir
