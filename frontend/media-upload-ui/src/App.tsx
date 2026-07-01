@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, ConfigProvider, theme, Button, Space, Input, Modal, Select, message } from 'antd';
+import { Layout, Menu, ConfigProvider, theme, Button, Space, Input, Modal, message } from 'antd';
 import {
   DashboardOutlined, UploadOutlined, UnorderedListOutlined,
-  SettingOutlined, LockOutlined
+  SettingOutlined, UserOutlined, LockOutlined, LogoutOutlined
 } from '@ant-design/icons';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
@@ -13,38 +13,29 @@ import { useSettingsStore } from './stores/settingsStore';
 const { Header, Sider, Content } = Layout;
 type Page = 'dashboard' | 'upload' | 'jobs' | 'config';
 
+// Đăng nhập bằng username/password (Basic Auth) cho người dùng qua giao diện
+// web. Các phương thức Bearer Token/API Key chỉ dành cho hệ thống ngoài gọi
+// API upload trực tiếp – được quản lý ở trang Cấu hình → Credentials, không
+// hiển thị ở màn hình đăng nhập này.
 function AuthModal({ onAuth }: { onAuth: () => void }) {
-  const [authType, setAuthType] = useState<'Bearer' | 'Basic' | 'ApiKey'>('Bearer');
-  const [token, setToken] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
   const handleAuth = () => {
-    if (!token && authType !== 'Basic') { message.warning('Nhập token'); return; }
-    if (authType === 'Basic') {
-      if (!username || !password) { message.warning('Nhập username/password'); return; }
-      localStorage.setItem('auth_token', btoa(`${username}:${password}`));
-    } else {
-      localStorage.setItem('auth_token', token);
-    }
-    localStorage.setItem('auth_type', authType);
-    message.success('Đã lưu xác thực');
+    if (!username || !password) { message.warning('Nhập tên đăng nhập và mật khẩu'); return; }
+    localStorage.setItem('auth_token', btoa(`${username}:${password}`));
+    localStorage.setItem('auth_type', 'Basic');
+    message.success('Đăng nhập thành công');
     onAuth();
   };
 
   return (
-    <Modal title="Xác thực" open closable={false} onOk={handleAuth} okText="Xác nhận" cancelButtonProps={{ style: { display: 'none' } }}>
+    <Modal title="Đăng nhập" open closable={false} onOk={handleAuth} okText="Đăng nhập" cancelButtonProps={{ style: { display: 'none' } }}>
       <Space direction="vertical" style={{ width: '100%' }}>
-        <Select value={authType} onChange={v => setAuthType(v)} style={{ width: '100%' }}
-          options={[{ value: 'Bearer', label: 'Bearer Token' }, { value: 'Basic', label: 'Basic Auth' }, { value: 'ApiKey', label: 'API Key' }]} />
-        {authType === 'Basic' ? (
-          <>
-            <Input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-            <Input.Password placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
-          </>
-        ) : (
-          <Input.Password placeholder={authType === 'Bearer' ? 'Bearer Token' : 'API Key'} value={token} onChange={e => setToken(e.target.value)} />
-        )}
+        <Input prefix={<UserOutlined />} placeholder="Tên đăng nhập" value={username}
+          onChange={e => setUsername(e.target.value)} onPressEnter={handleAuth} autoFocus />
+        <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu" value={password}
+          onChange={e => setPassword(e.target.value)} onPressEnter={handleAuth} />
       </Space>
     </Modal>
   );
@@ -85,7 +76,7 @@ export default function App() {
         </Sider>
         <Layout>
           <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', boxShadow: '0 1px 4px rgba(0,0,0,.12)' }}>
-            <Button icon={<LockOutlined />} onClick={() => { localStorage.clear(); setAuthed(false); }}>Đổi token</Button>
+            <Button icon={<LogoutOutlined />} onClick={() => { localStorage.clear(); setAuthed(false); }}>Đăng xuất</Button>
           </Header>
           <Content style={{ margin: 16, padding: 24, background: '#f5f5f5', borderRadius: 8, overflow: 'auto' }}>
             {pages[page]}

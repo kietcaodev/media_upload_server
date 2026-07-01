@@ -104,5 +104,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             Enabled = true,
             CreatedAtUtc = seedTimestamp,
         });
+
+        // Credential Basic (username/password) dùng riêng cho màn hình đăng nhập
+        // web UI – cùng mật khẩu với token Bearer ở trên nên tái dùng chung
+        // adminHashedSecret (BCrypt hash chỉ phụ thuộc raw secret, không phụ
+        // thuộc Username). Bearer token vẫn giữ để hệ thống ngoài gọi API upload.
+        model.Entity<ApiCredential>().HasData(new ApiCredential
+        {
+            Id = 2,
+            Name = "admin (web login)",
+            AuthType = Domain.Enums.AuthType.Basic,
+            Username = "admin",
+            HashedSecret = adminHashedSecret,
+            TokenPrefix = adminRawToken[..8],
+            CanUpload = true,
+            CanReadJobs = true,
+            CanConfig = true,
+            AllowedErp = "",
+            Enabled = true,
+            CreatedAtUtc = seedTimestamp,
+        });
     }
 }
