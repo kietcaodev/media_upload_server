@@ -286,6 +286,14 @@ step_build_backend() {
         err "dotnet restore thất bại (exit ${restore_status}). Xem log: ${restore_log}"
     fi
 
+    # QUAN TRỌNG: dotnet publish KHÔNG tự xoá các file cũ không còn được dùng
+    # trong thư mục output – nó chỉ ghi đè/thêm file mới. Nếu một package bị
+    # gỡ/hạ version giữa 2 lần publish (vd: Microsoft.OpenApi), DLL phiên bản
+    # CŨ vẫn còn nằm lại và có thể bị load nhầm, gây lỗi khó hiểu như
+    # TypeLoadException dù code/csproj đã sửa đúng. => Luôn dọn sạch thư mục
+    # output trước khi publish để đảm bảo không còn DLL mồ côi.
+    rm -rf "${APP_DIR}/api"
+
     dotnet publish MediaUpload.API/MediaUpload.API.csproj \
         -c Release \
         -o "${APP_DIR}/api" \
