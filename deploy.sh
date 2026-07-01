@@ -428,7 +428,7 @@ Description=Media Upload API (.NET 10)
 After=network.target postgresql.service
 
 [Service]
-Type=notify
+Type=simple
 User=${APP_USER}
 WorkingDirectory=${APP_DIR}/api
 ExecStart=/usr/bin/dotnet ${APP_DIR}/api/MediaUpload.API.dll
