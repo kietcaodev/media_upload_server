@@ -1,19 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Form, Input, Select, Button, Upload, message, Space, Row, Col, Typography } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
-import { uploadApi } from '../api/services';
+import { erpApi, uploadApi } from '../api/services';
 
 const { Dragger } = Upload;
 const { Title } = Typography;
-
-
-const ERP_TARGETS = ['DND', 'ZOMZEM', 'ZOZIN'];
 
 export default function UploadPage() {
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [erpTargets, setErpTargets] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Lấy đúng danh sách ERP đã cấu hình (tab Cấu hình > ERP Endpoints) và đang
+    // bật – tránh cho user chọn 1 target chưa cấu hình URL/token (sẽ bị ERP
+    // push "skipped" âm thầm dù upload/tạo job vẫn thành công).
+    erpApi.list().then(list => setErpTargets(list.filter(e => e.enabled).map(e => e.target)));
+  }, []);
 
   const handleUpload = async (values: Record<string, string>) => {
     const files = fileList
@@ -47,7 +52,7 @@ export default function UploadPage() {
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item name="erpTarget" label="ERP Target" rules={[{ required: true }]}>
-                <Select placeholder="Chọn ERP" options={ERP_TARGETS.map(t => ({ value: t, label: t }))} />
+                <Select placeholder="Chọn ERP" options={erpTargets.map(t => ({ value: t, label: t }))} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
