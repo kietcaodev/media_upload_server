@@ -162,7 +162,7 @@ public class SystemSettingRepository(AppDbContext db) : ISystemSettingRepository
         ["nas.video_path_prefix"]        = "/homes/video/uploads/",
         ["upload.max_file_size_bytes"]   = "1572864000",
         ["upload.max_files_per_request"] = "5",
-        ["upload.allowed_extensions"]    = ".mp4,.avi,.mov,.mkv,.wmv,.flv",
+        ["upload.allowed_extensions"]    = ".mp4,.avi,.mov,.mkv,.flv,.wmv,.webm,.3gp,.mp3,.wav,.ogg,.aac,.flac,.m4a,.wma,.jpg,.jpeg,.png,.gif,.bmp,.webp,.tiff,.tif,.ico,.heic,.heif",
         ["worker.tick_interval_seconds"] = "30",
         ["worker.max_retry"]             = "3",
         ["worker.retry_delay_minutes"]   = "5",
