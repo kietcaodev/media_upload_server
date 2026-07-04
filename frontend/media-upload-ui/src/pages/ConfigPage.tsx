@@ -338,11 +338,13 @@ function SystemSettingsTab() {
           <Card key={prefix} title={title} size="small" style={{ marginBottom: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
               {group.map(s => (
-                <Form.Item key={s.key} name={s.key}
+                <Form.Item key={s.key}
                   label={<Space size={4}><span>{s.key.split('.')[1]}</span>{s.hotReload ? <Tag color="green" style={{ fontSize: 10 }}>hot</Tag> : <Tag color="orange" style={{ fontSize: 10 }}>restart</Tag>}</Space>}
                   extra={s.description} style={{ marginBottom: 4 }}>
                   <Space.Compact style={{ width: '100%' }}>
-                    <Input />
+                    <Form.Item name={s.key} noStyle>
+                      <Input />
+                    </Form.Item>
                     <Button onClick={() => reset(s.key).then(() => message.success(`Reset ${s.key}`))}>↺</Button>
                   </Space.Compact>
                 </Form.Item>

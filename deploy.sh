@@ -332,7 +332,9 @@ step_build_backend() {
 
     log "Publish xong → ${APP_DIR}/api"
 }
-run_step "build_backend" step_build_backend
+# LUÔN chạy lại (không qua checkpoint) – phải publish code MỚI NHẤT ở mỗi lần
+# deploy, không chỉ lần đầu. dotnet publish an toàn để chạy lại nhiều lần.
+step_build_backend
 
 # =============================================================================
 # BƯỚC 5: Build Frontend
@@ -359,7 +361,9 @@ EOF
     cp -r dist/. "${APP_DIR}/ui/"
     log "Frontend build xong → ${APP_DIR}/ui"
 }
-run_step "build_frontend" step_build_frontend
+# LUÔN chạy lại (không qua checkpoint) – tương tự build_backend, phải build
+# React MỚI NHẤT ở mỗi lần deploy. npm ci + vite build an toàn để rerun.
+step_build_frontend
 
 # Xác định host công khai (domain nếu có, không thì tự dò IP public) – dùng cho
 # CORS AllowedOrigins và Common Name của self-signed TLS cert ở bước setup_nginx.
@@ -417,7 +421,10 @@ EOF
     grep -q "Password=" "${APP_DIR}/api/appsettings.Production.json" || \
         err "appsettings.Production.json vừa ghi KHÔNG chứa connection string hợp lệ – kiểm tra quyền ghi ${APP_DIR}/api/."
 }
-run_step "write_appsettings" step_write_appsettings
+# LUÔN chạy lại (không qua checkpoint) – ghi đè appsettings.Production.json
+# mỗi lần (idempotent, giữ nguyên connection string/AES key qua secrets đã
+# tái sử dụng ở trên).
+step_write_appsettings
 
 # =============================================================================
 # BƯỚC 7: EF Migration
@@ -451,7 +458,9 @@ step_run_migration() {
     wait $api_pid 2>/dev/null || true
     log "Migration hoàn tất"
 }
-run_step "run_migration" step_run_migration
+# LUÔN chạy lại (không qua checkpoint) – áp dụng migration MỚI (nếu có) ở mỗi
+# lần deploy. An toàn để rerun: EF Core tự bỏ qua migration đã áp dụng rồi.
+step_run_migration
 
 # =============================================================================
 # BƯỚC 8: Systemd service
@@ -656,6 +665,22 @@ step_setup_firewall() {
     fi
 }
 run_step "setup_firewall" step_setup_firewall
+
+# =============================================================================
+# LUÔN restart service sau mỗi lần chạy script (KHÔNG qua run_step/checkpoint).
+# Lý do: "systemctl restart" trước đây chỉ nằm trong step_setup_systemd, vốn
+# chỉ chạy 1 lần lúc cài mới. Ở các lần redeploy sau (git pull + chạy lại
+# deploy.sh), toàn bộ step_* (kể cả build_backend/build_frontend) bị SKIP do
+# đã checkpoint xong trước đó → publish/build vẫn tạo file mới trong
+# ${APP_DIR}/api và ${APP_DIR}/ui, nhưng service .NET đang chạy KHÔNG được
+# restart nên vẫn phục vụ binary CŨ (và migration mới cũng không được áp
+# dụng vì Program.cs chỉ MigrateAsync() lúc khởi động app). => Luôn
+# daemon-reload + restart ở đây để mỗi lần chạy deploy.sh đều áp dụng đúng
+# bản build/migration mới nhất, bất kể checkpoint.
+# =============================================================================
+log "Khởi động lại service để áp dụng bản build/migration mới nhất..."
+systemctl daemon-reload
+systemctl restart "${SERVICE_NAME}"
 
 # =============================================================================
 # BƯỚC 10: Health check – xác minh deploy thành công
