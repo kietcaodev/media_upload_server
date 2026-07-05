@@ -10,11 +10,18 @@ public static class FileSignatureValidator
 {
     public static async Task<bool> IsValidAsync(string filePath)
     {
+        await using var fs = File.OpenRead(filePath);
+        return await IsValidAsync(fs);
+    }
+
+    /// <summary>Validate directly from a stream (e.g. IFormFile.OpenReadStream()) without
+    /// requiring the file to be persisted to disk first.</summary>
+    public static async Task<bool> IsValidAsync(Stream stream)
+    {
         try
         {
             var buffer = new byte[24];
-            await using var fs = File.OpenRead(filePath);
-            var read = await fs.ReadAsync(buffer.AsMemory(0, buffer.Length));
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length));
             if (read < 4) return false;
 
             var hex = Convert.ToHexString(buffer, 0, read);

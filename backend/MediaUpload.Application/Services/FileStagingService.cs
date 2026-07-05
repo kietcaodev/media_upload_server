@@ -18,7 +18,8 @@ public class FileStagingService(SettingsService settings, TimeWindowChecker time
     /// <summary>
     /// Call right after a file has been written to the staging directory.
     /// Returns the NAS path if the move happened immediately (within window),
-    /// otherwise returns the original staging path unchanged.
+    /// otherwise returns the original staging path unchanged. Preserves whatever
+    /// sub-folder structure the file was staged under (see BuildFolderStructure).
     /// </summary>
     public async Task<string> PromoteToNasIfWithinWindowAsync(string currentPath)
     {
@@ -30,8 +31,9 @@ public class FileStagingService(SettingsService settings, TimeWindowChecker time
             return currentPath; // outside window – stays staged locally for now
 
         var nasDir = await GetNasDirAsync();
-        Directory.CreateDirectory(nasDir);
-        var destPath = Path.Combine(nasDir, Path.GetFileName(currentPath));
+        var relative = Path.GetRelativePath(stagingDir, currentPath);
+        var destPath = Path.Combine(nasDir, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
         File.Move(currentPath, destPath, overwrite: true);
         return destPath;
     }
@@ -43,4 +45,64 @@ public class FileStagingService(SettingsService settings, TimeWindowChecker time
             + Path.DirectorySeparatorChar;
         return fullPath.StartsWith(fullDir, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── Legacy folder-structure helpers (ported từ server.js) ───────────────
+
+    /// <summary>Strip ký tự không an toàn khỏi tên thư mục (company_id/ord_code/user_id).</summary>
+    public static string SanitizeFolderName(string name)
+    {
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(name, "[^a-zA-Z0-9._\\-\\s()]", "_");
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, "\\.{2,}", "_");
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, "\\s+", "_");
+        return sanitized.Trim();
+    }
+
+    /// <summary>Strip ký tự không an toàn khỏi tên file (giữ khoảng trắng/dấu ngoặc, không cho path traversal).</summary>
+    public static string SanitizeFilename(string filename)
+    {
+        var baseName = Path.GetFileName(filename);
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(baseName, "[^a-zA-Z0-9._\\-\\s()]", "_");
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, "\\.{2,}", "_").Trim();
+        if (string.IsNullOrEmpty(sanitized) || sanitized is "." or "..")
+            return $"file_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        return sanitized;
+    }
+
+    /// <summary>{company}/{ordCode}/{user}/{yyyy}/{mm}/{dd} – khớp cấu trúc thư mục của server.js cũ.</summary>
+    public static (string RelativeFolder, string Company, string OrdCode, string User, string Year, string Month, string Day)
+        BuildFolderStructure(string companyId, string ordCode, string userId, DateTime nowUtc)
+    {
+        var company = SanitizeFolderName(companyId);
+        var ord = SanitizeFolderName(ordCode);
+        var user = SanitizeFolderName(userId);
+        var year = nowUtc.Year.ToString();
+        var month = nowUtc.Month.ToString("D2");
+        var day = nowUtc.Day.ToString("D2");
+        var relFolder = Path.Combine(company, ord, user, year, month, day);
+        return (relFolder, company, ord, user, year, month, day);
+    }
+
+    /// <summary>
+    /// Tên file cuối cùng trong thư mục đích (customFilename nếu có, không thì tên gốc đã sanitize),
+    /// tự thêm hậu tố timestamp+random nếu đã tồn tại file cùng tên trên NAS (chống ghi đè,
+    /// giống generateUniqueFilename() của server.js cũ).
+    /// </summary>
+    public async Task<string> GenerateUniqueFilenameAsync(string relativeFolder, string originalName, string? customFilename)
+    {
+        var baseName = !string.IsNullOrWhiteSpace(customFilename) ? SanitizeFilename(customFilename) : SanitizeFilename(originalName);
+        var nasDir = await GetNasDirAsync();
+        var targetDir = Path.Combine(nasDir, relativeFolder);
+
+        var filename = baseName;
+        if (File.Exists(Path.Combine(targetDir, filename)))
+        {
+            var ext = Path.GetExtension(baseName);
+            var nameWithoutExt = Path.GetFileNameWithoutExtension(baseName);
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var random = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(2)).ToLowerInvariant();
+            filename = $"{nameWithoutExt}_{timestamp}_{random}{ext}";
+        }
+        return filename;
+    }
 }
+

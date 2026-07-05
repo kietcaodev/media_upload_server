@@ -2,24 +2,48 @@ using MediaUpload.Domain.Enums;
 
 namespace MediaUpload.Application.DTOs;
 
-// ── Upload ──────────────────────────────────────────────
-public record UploadRequest(
-    string ErpTarget,
-    string? Longitude,
-    string? Latitude,
-    string? FlowId,
-    string? OrderId,
-    string? NvktId
+// ── Upload (contract ported 1:1 từ server.js cũ để hệ thống ngoài không cần
+//    sửa code khi chuyển sang backend .NET) ──────────────────────
+public record UploadedFileDto(
+    string FileId,
+    string OriginalName,
+    string Filename,       // tên file đã lưu (sau sanitize/custom filename/chống trùng)
+    string RelativePath,    // path tương đối trong nas.upload_dir, dùng để tra cứu/đối chiếu
+    long Size,
+    string SizeInMB
 );
 
-public record UploadResponse(
-    Guid JobId,
-    string FileId,
-    string FileName,
-    long FileSize,
-    string Status,
-    string CreatedAtUtc
+public record FolderStructureDto(string Company, string OrdCode, string User, string Year, string Month, string Day);
+
+public record UploadJobRefDto(string JobId, string FileId, string Status);
+
+/// <summary>ERP không còn được gọi đồng bộ ngay trong request (job được xử lý bởi
+/// worker nền, có thể bị giữ lại ngoài Time Window) – trường này phản ánh đúng
+/// trạng thái "đã đưa vào hàng đợi" thay vì kết quả push ERP thật như bản cũ.</summary>
+public record ErpSyncDto(bool Queued, string Message, List<UploadJobRefDto> Jobs);
+
+public record UploadResultResponse(
+    bool Success,
+    string Message,
+    string CompanyId,
+    string OrdCode,
+    string UserId,
+    string? OrderId,
+    string? NvktId,
+    LocationDto Location,
+    string? FlowId,
+    FolderStructureDto FolderStructure,
+    List<string> ListVideoPaths,
+    string UploadedAt,
+    string UploadedAtVN,
+    ErpSyncDto ErpSync,
+    UploadedFileDto? File,       // set khi chỉ 1 file
+    List<UploadedFileDto>? Files, // set khi nhiều file
+    long? TotalSize,
+    string? TotalSizeMB
 );
+
+public record LocationDto(double? Longitude, double? Latitude);
 
 // ── Jobs ─────────────────────────────────────────────────
 public record JobDto(

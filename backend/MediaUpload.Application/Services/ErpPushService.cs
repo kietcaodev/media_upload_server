@@ -19,6 +19,12 @@ public class ErpPushService(
         var token = encryption.Decrypt(erp.EncryptedToken);
         var prefix = await settings.GetAsync("nas.video_path_prefix", "/homes/video/uploads/");
 
+        // Ưu tiên RelativePath (bao gồm cây thư mục company/ordCode/user/yyyy/mm/dd/
+        // ported từ server.js) – fallback về tên file phẳng cho job cũ chưa có field này.
+        var videoPath = !string.IsNullOrEmpty(job.RelativePath)
+            ? job.RelativePath.Replace('\\', '/')
+            : Path.GetFileName(job.SavedPath);
+
         var client = httpFactory.CreateClient("erp");
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(job.Longitude ?? ""), "longitude");
@@ -26,7 +32,7 @@ public class ErpPushService(
         form.Add(new StringContent(job.FlowId ?? ""), "flow_id");
         form.Add(new StringContent(job.OrderId ?? ""), "order_id");
         form.Add(new StringContent(job.NvktId ?? ""), "nvkt_id");
-        form.Add(new StringContent($"{prefix}{Path.GetFileName(job.SavedPath)}"), "list_video_path[]");
+        form.Add(new StringContent($"{prefix}{videoPath}"), "list_video_path[]");
 
         // QUAN TRỌNG: ERP thực tế (locnuoc365.xyz/zomzem.xyz/erp.zozin.vn) expose
         // route dạng POST {baseUrl}/{order_id} (xem server.js gốc - bản Node.js
