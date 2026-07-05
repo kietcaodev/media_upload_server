@@ -28,7 +28,13 @@ public class ErpPushService(
         form.Add(new StringContent(job.NvktId ?? ""), "nvkt_id");
         form.Add(new StringContent($"{prefix}{Path.GetFileName(job.SavedPath)}"), "list_video_path[]");
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, erp.Url) { Content = form };
+        // QUAN TRỌNG: ERP thực tế (locnuoc365.xyz/zomzem.xyz/erp.zozin.vn) expose
+        // route dạng POST {baseUrl}/{order_id} (xem server.js gốc - bản Node.js
+        // cũ đã chạy production trước đây), KHÔNG phải POST thẳng {baseUrl}.
+        // Thiếu đoạn nối order_id vào path này khiến mọi request tới ERP thật
+        // trả 404 dù order_id vẫn có trong form-data.
+        var erpUrl = $"{erp.Url.TrimEnd('/')}/{job.OrderId}";
+        using var request = new HttpRequestMessage(HttpMethod.Post, erpUrl) { Content = form };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         try
