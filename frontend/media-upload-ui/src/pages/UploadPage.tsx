@@ -88,7 +88,12 @@ export default function UploadPage() {
               accept="video/*,.mp4,.avi,.mov,.mkv,.wmv,.flv"
               fileList={fileList}
               beforeUpload={(file) => {
-                setFileList(prev => [...prev, file as any]);
+                setFileList(prev => [...prev, {
+                  uid: file.uid,
+                  name: file.name,
+                  status: 'done',
+                  originFileObj: file,
+                } as UploadFile]);
                 return false; // Prevent auto upload
               }}
               onRemove={(file) => setFileList(prev => prev.filter(f => f.uid !== file.uid))}
