@@ -76,8 +76,10 @@ public class UploadController(
         }
 
         var nowUtc = DateTime.UtcNow;
+        var tz = await settings.GetTimezoneAsync();
+        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz);
         var (relFolder, company, ord, user, year, month, day) =
-            FileStagingService.BuildFolderStructure(companyId!, ordCode!, userId!, nowUtc);
+            FileStagingService.BuildFolderStructure(companyId!, ordCode!, userId!, nowLocal);
         var stagingDir = await fileStaging.GetStagingDirAsync();
         var erpTarget  = companyId!.Trim().ToUpperInvariant();
         var maxRetry   = await settings.GetIntAsync("worker.max_retry", 3);
@@ -132,7 +134,6 @@ public class UploadController(
             totalSize += file.Length;
         }
 
-        var tz = await settings.GetTimezoneAsync();
         var uploadedAtVN = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz).ToString("dd/MM/yyyy HH:mm:ss");
 
         var response = new UploadResultResponse(

@@ -68,33 +68,40 @@ public class FileStagingService(SettingsService settings, TimeWindowChecker time
         return sanitized;
     }
 
-    /// <summary>{company}/{ordCode}/{user}/{yyyy}/{mm}/{dd} – khớp cấu trúc thư mục của server.js cũ.</summary>
+    /// <summary>{company}/{ordCode}/{user}/{yyyy}/{mm}/{dd} – khớp cấu trúc thư mục của server.js cũ.
+    /// Truyền vào giờ ĐỊA PHƯƠNG (đã quy đổi theo system.timezone), không phải UTC – server.js gốc
+    /// dùng `new Date()` (giờ hệ thống local), nếu dùng UTC trực tiếp thì ngày trong thư mục sẽ lệch
+    /// 1 ngày trong nhiều giờ mỗi ngày đối với các timezone lệch UTC (vd Asia/Ho_Chi_Minh = UTC+7).</summary>
     public static (string RelativeFolder, string Company, string OrdCode, string User, string Year, string Month, string Day)
-        BuildFolderStructure(string companyId, string ordCode, string userId, DateTime nowUtc)
+        BuildFolderStructure(string companyId, string ordCode, string userId, DateTime nowLocal)
     {
         var company = SanitizeFolderName(companyId);
         var ord = SanitizeFolderName(ordCode);
         var user = SanitizeFolderName(userId);
-        var year = nowUtc.Year.ToString();
-        var month = nowUtc.Month.ToString("D2");
-        var day = nowUtc.Day.ToString("D2");
+        var year = nowLocal.Year.ToString();
+        var month = nowLocal.Month.ToString("D2");
+        var day = nowLocal.Day.ToString("D2");
         var relFolder = Path.Combine(company, ord, user, year, month, day);
         return (relFolder, company, ord, user, year, month, day);
     }
 
     /// <summary>
     /// Tên file cuối cùng trong thư mục đích (customFilename nếu có, không thì tên gốc đã sanitize),
-    /// tự thêm hậu tố timestamp+random nếu đã tồn tại file cùng tên trên NAS (chống ghi đè,
-    /// giống generateUniqueFilename() của server.js cũ).
+    /// tự thêm hậu tố timestamp+random nếu đã tồn tại file cùng tên (chống ghi đè, giống
+    /// generateUniqueFilename() của server.js cũ). Kiểm tra CẢ staging dir lẫn NAS dir – file có thể
+    /// đang nằm ở 1 trong 2 nơi tuỳ đã được promote lên NAS hay chưa (xem PromoteToNasIfWithinWindowAsync),
+    /// kể cả file vừa ghi trong CÙNG request này (upload nhiều file trùng tên/trùng customFilename).
     /// </summary>
     public async Task<string> GenerateUniqueFilenameAsync(string relativeFolder, string originalName, string? customFilename)
     {
         var baseName = !string.IsNullOrWhiteSpace(customFilename) ? SanitizeFilename(customFilename) : SanitizeFilename(originalName);
         var nasDir = await GetNasDirAsync();
-        var targetDir = Path.Combine(nasDir, relativeFolder);
+        var stagingDir = await GetStagingDirAsync();
+        var nasTargetDir = Path.Combine(nasDir, relativeFolder);
+        var stagingTargetDir = Path.Combine(stagingDir, relativeFolder);
 
         var filename = baseName;
-        if (File.Exists(Path.Combine(targetDir, filename)))
+        if (File.Exists(Path.Combine(nasTargetDir, filename)) || File.Exists(Path.Combine(stagingTargetDir, filename)))
         {
             var ext = Path.GetExtension(baseName);
             var nameWithoutExt = Path.GetFileNameWithoutExtension(baseName);
