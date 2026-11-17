@@ -52,7 +52,7 @@ public class CredentialsController(IApiCredentialRepository repo) : ControllerBa
             CanUpload    = req.CanUpload,
             CanReadJobs  = req.CanReadJobs,
             CanConfig    = req.CanConfig,
-            AllowedErp   = req.AllowedErp,
+            AllowedErp   = req.AllowedErp ?? "",
         };
 
         await repo.AddAsync(cred);
@@ -84,7 +84,7 @@ public class CredentialsController(IApiCredentialRepository repo) : ControllerBa
         cred.CanUpload  = req.CanUpload;
         cred.CanReadJobs= req.CanReadJobs;
         cred.CanConfig  = req.CanConfig;
-        cred.AllowedErp = req.AllowedErp;
+        cred.AllowedErp = req.AllowedErp ?? "";
         cred.Enabled    = req.Enabled;
         await repo.UpdateAsync(cred);
         return Ok(MapDto(cred));
@@ -112,6 +112,6 @@ public record UpdateCredentialRequest(
     bool CanUpload,
     bool CanReadJobs,
     bool CanConfig,
-    string AllowedErp,
+    string? AllowedErp,
     bool Enabled
 );

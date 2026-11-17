@@ -120,7 +120,7 @@ public record CreateCredentialRequest(
     bool CanUpload,
     bool CanReadJobs,
     bool CanConfig,
-    string AllowedErp
+    string? AllowedErp  // UI bỏ field khi để trống → phải nullable, không thì [ApiController] trả 400
 );
 
 public record CreateCredentialResponse(
