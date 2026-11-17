@@ -65,6 +65,9 @@ NGINX_PUBLIC_PORT="8443"           # QUAN TRỌNG: port 80/443 mặc định tr�
                                     # default_server đó bất kể site của mình cấu hình gì. Dùng port
                                     # riêng để tránh đụng vào cấu hình default_server có sẵn (an toàn
                                     # cho các app/dịch vụ khác đang chạy chung server).
+LEGACY_HTTP_PORT="8000"            # App mobile cũ (contract server.js) gọi cứng http://IP:8000/api/upload –
+                                    # port này chỉ mở POST /api/upload + /health qua HTTP thường để app
+                                    # cũ chạy tiếp không cần ra bản mới. KHÔNG được trùng NGINX_PUBLIC_PORT.
 
 # Tên service/site – đặt riêng biệt để KHÔNG trùng với service khác có thể đã
 # tồn tại trên VPS (vd: một app Node.js cũ tên "media-upload-api"). Đổi tên ở
@@ -621,6 +624,36 @@ server {
         try_files \$uri \$uri/ ${BASE_PATH}/index.html;
     }
 }
+
+# Tương thích app mobile cũ: server.js chạy HTTP thường ở port ${LEGACY_HTTP_PORT}, path gốc
+# /api/upload. Chỉ mở đúng endpoint đó (+ /health), mọi thứ khác 404 – UI/config chỉ qua HTTPS.
+server {
+    listen ${LEGACY_HTTP_PORT};
+    server_name ${server_name};
+
+    client_max_body_size 1600m;
+    client_body_timeout  300s;
+    proxy_read_timeout   300s;
+    proxy_send_timeout   300s;
+
+    location = /api/upload {
+        proxy_pass         http://mediaupload_dotnet_api/api/upload;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_set_header   Connection        "";
+    }
+
+    location = /health {
+        proxy_pass http://mediaupload_dotnet_api/health;
+    }
+
+    location / {
+        return 404;
+    }
+}
 EOF
 
     ln -sf "/etc/nginx/sites-available/${NGINX_SITE_NAME}" /etc/nginx/sites-enabled/
@@ -629,28 +662,31 @@ EOF
     nginx -t && systemctl reload nginx
     log "Nginx đã reload"
 }
-run_step "setup_nginx" step_setup_nginx
+# Đổi tên checkpoint (_v2) để bước này chạy lại 1 lần trên server đã deploy, áp dụng
+# server block port ${LEGACY_HTTP_PORT} mới. Bước này idempotent (ghi đè file config).
+run_step "setup_nginx_v2" step_setup_nginx
 
 # =============================================================================
 # BƯỚC 9b: Mở port ${NGINX_PUBLIC_PORT} trên iptables
 # =============================================================================
 step_setup_firewall() {
-    log "Mở port ${NGINX_PUBLIC_PORT}/tcp trên iptables..."
-
     if ! command -v iptables &>/dev/null; then
         warn "Không tìm thấy iptables trên hệ thống – bỏ qua bước này."
         return 0
     fi
 
-    if iptables -C INPUT -p tcp --dport "${NGINX_PUBLIC_PORT}" -j ACCEPT 2>/dev/null; then
-        log "Port ${NGINX_PUBLIC_PORT}/tcp đã được mở sẵn trên iptables"
-    else
-        # Chèn lên ĐẦU chain INPUT (không dùng -A append) để rule này có hiệu
-        # lực TRƯỚC bất kỳ rule DROP/REJECT catch-all nào ở cuối chain – nếu
-        # chỉ append, rule ACCEPT có thể không bao giờ được match tới.
-        iptables -I INPUT 1 -p tcp --dport "${NGINX_PUBLIC_PORT}" -j ACCEPT
-        log "Đã mở port ${NGINX_PUBLIC_PORT}/tcp trên iptables"
-    fi
+    local port
+    for port in "${NGINX_PUBLIC_PORT}" "${LEGACY_HTTP_PORT}"; do
+        if iptables -C INPUT -p tcp --dport "${port}" -j ACCEPT 2>/dev/null; then
+            log "Port ${port}/tcp đã được mở sẵn trên iptables"
+        else
+            # Chèn lên ĐẦU chain INPUT (không dùng -A append) để rule này có hiệu
+            # lực TRƯỚC bất kỳ rule DROP/REJECT catch-all nào ở cuối chain – nếu
+            # chỉ append, rule ACCEPT có thể không bao giờ được match tới.
+            iptables -I INPUT 1 -p tcp --dport "${port}" -j ACCEPT
+            log "Đã mở port ${port}/tcp trên iptables"
+        fi
+    done
 
     # Lưu rule lại để không mất sau khi reboot VPS
     if command -v netfilter-persistent &>/dev/null; then
@@ -664,7 +700,7 @@ step_setup_firewall() {
         warn "Cài persist: apt-get install -y iptables-persistent"
     fi
 }
-run_step "setup_firewall" step_setup_firewall
+run_step "setup_firewall_v2" step_setup_firewall
 
 # =============================================================================
 # LUÔN restart service sau mỗi lần chạy script (KHÔNG qua run_step/checkpoint).
@@ -720,6 +756,7 @@ echo -e " ${GREEN}Deploy thành công!${NC}"
 echo "══════════════════════════════════════════════════════"
 echo " URL:          https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}${BASE_PATH}/"
 echo " API:          https://${PUBLIC_HOST}:${NGINX_PUBLIC_PORT}${BASE_PATH}/api"
+echo " App mobile cũ: http://${PUBLIC_HOST}:${LEGACY_HTTP_PORT}/api/upload  (chỉ POST upload, HTTP thường)"
 echo " Swagger:      http://localhost:${API_PORT}/swagger  (chỉ từ server)"
 echo " Logs:         journalctl -u ${SERVICE_NAME} -f"
 echo " Checkpoint:   ${STATE_FILE}  (xoá hoặc dùng --reset để chạy lại từ đầu)"

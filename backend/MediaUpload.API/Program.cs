@@ -5,6 +5,7 @@ using MediaUpload.Infrastructure.Persistence;
 using MediaUpload.Domain.Interfaces;
 using MediaUpload.API.Hubs;
 using MediaUpload.API.Middleware;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;
@@ -92,6 +93,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Sau nginx, RemoteIpAddress luôn là 127.0.0.1 → rate limit dùng chung 1 bucket cho
+// mọi client. Lấy IP thật từ X-Forwarded-For (mặc định chỉ tin proxy loopback = nginx).
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+});
 app.UseSerilogRequestLogging();
 app.UseCors();
 app.UseMiddleware<AuthMiddleware>();

@@ -20,6 +20,11 @@ public class UploadController(
 {
     [HttpPost]
     [RequirePermission("upload")]
+    // Kestrel mặc định chặn body > 30MB và multipart > 128MB (trả 400 trước khi vào action).
+    // Bỏ giới hạn ở đây: nginx (client_max_body_size) là chốt chặn, dung lượng từng file
+    // vẫn được kiểm tra theo upload.max_file_size_bytes bên dưới.
+    [DisableRequestSizeLimit]
+    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
     public async Task<IActionResult> Upload(
         [FromForm(Name = "company_id")] string? companyId,
         [FromForm(Name = "ord_code")] string? ordCode,
@@ -29,9 +34,12 @@ public class UploadController(
         [FromForm(Name = "latitude")] string? latitude,
         [FromForm(Name = "flow_id")] string? flowId,
         [FromForm(Name = "order_id")] string? orderId,
-        [FromForm(Name = "nvkt_id")] string? nvktId,
-        IFormFileCollection files)
+        [FromForm(Name = "nvkt_id")] string? nvktId)
     {
+        // Lấy mọi file trong form bất kể tên field: server.js cũ nhận cả "files" lẫn "files[]"
+        // (Dio/Flutter hay gửi "files[]"), còn IFormFileCollection chỉ bind đúng field "files".
+        var files = (await Request.ReadFormAsync()).Files;
+
         // Validate required fields – giữ nguyên field name/code/message như server.js cũ
         // để hệ thống ngoài đang tích hợp theo contract đó không phải sửa gì.
         (string Code, string? Value, string Message)[] required =
