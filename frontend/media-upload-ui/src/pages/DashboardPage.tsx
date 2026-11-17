@@ -18,7 +18,7 @@ const statusColor: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const { stats, fetchStats, fetchTimeline, startSignalR, stopSignalR } = useDashboardStore();
+  const { stats, fetchStats, fetchTimeline } = useDashboardStore();
   const { status: workerStatus, fetch: fetchWorker, pause, resume } = useWorkerStore();
   const { jobs, total, page, pageSize, loading, fetch: fetchJobs } = useJobStore();
 
@@ -27,8 +27,6 @@ export default function DashboardPage() {
     fetchTimeline();
     fetchWorker();
     fetchJobs(1);
-    startSignalR();
-    return () => stopSignalR();
   }, []);
 
   const columns = [

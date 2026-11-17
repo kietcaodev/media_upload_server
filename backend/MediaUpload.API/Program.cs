@@ -49,6 +49,7 @@ builder.Services.AddApplication();
 builder.Services.AddHttpClient("erp");
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<MediaUpload.Application.Worker.IJobNotifier, JobHubNotifier>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

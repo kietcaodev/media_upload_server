@@ -36,6 +36,13 @@ public class WorkerStateService
     public void DecrementActive() => Interlocked.Decrement(ref _activeCount);
 }
 
+/// <summary>Báo realtime khi job đổi trạng thái. Cài đặt bằng SignalR ở tầng API
+/// (Application không tham chiếu ASP.NET Core). Không được throw.</summary>
+public interface IJobNotifier
+{
+    Task JobStatusChangedAsync(UploadJob job);
+}
+
 /// <summary>
 /// Background hosted service.
 /// Producer: reads pending jobs from DB → Channel.
@@ -45,6 +52,7 @@ public class WorkerStateService
 public class JobWorkerService(
     IServiceScopeFactory scopeFactory,
     WorkerStateService workerState,
+    IJobNotifier notifier,
     ILogger<JobWorkerService> logger)
     : BackgroundService
 {
@@ -152,6 +160,7 @@ public class JobWorkerService(
             fresh.Status = JobStatus.Processing;
             fresh.ProcessedAtUtc = DateTime.UtcNow;
             await jobRepo.UpdateAsync(fresh);
+            await notifier.JobStatusChangedAsync(fresh);
 
             var (success, error) = await erpPush.PushAsync(fresh);
 
@@ -181,6 +190,7 @@ public class JobWorkerService(
             }
 
             await jobRepo.UpdateAsync(fresh);
+            await notifier.JobStatusChangedAsync(fresh);
             logger.LogInformation("Job {Id} → {Status}", fresh.Id, fresh.Status);
         }
         catch (Exception ex)

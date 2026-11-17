@@ -9,6 +9,7 @@ import UploadPage from './pages/UploadPage';
 import JobsPage from './pages/JobsPage';
 import ConfigPage from './pages/ConfigPage';
 import { useSettingsStore } from './stores/settingsStore';
+import { useDashboardStore } from './stores/dashboardStore';
 import { dashboardApi } from './api/services';
 
 const { Header, Sider, Content } = Layout;
@@ -75,8 +76,15 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard');
   const [authed, setAuthed] = useState(!!localStorage.getItem('auth_token'));
   const { fetch: fetchSettings } = useSettingsStore();
+  const { startSignalR, stopSignalR } = useDashboardStore();
 
-  useEffect(() => { if (authed) fetchSettings(); }, [authed]);
+  useEffect(() => {
+    if (!authed) return;
+    fetchSettings();
+    // 1 kết nối realtime cho cả app (Dashboard + Jobs cùng tự cập nhật).
+    startSignalR();
+    return () => stopSignalR();
+  }, [authed]);
 
   if (!authed) return (
     <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>

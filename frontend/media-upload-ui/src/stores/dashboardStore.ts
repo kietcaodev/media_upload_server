@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { HubConnectionBuilder, HubConnection, LogLevel } from '@microsoft/signalr';
 import { dashboardApi } from '../api/services';
+import { useJobStore } from './jobStore';
 import type { DashboardStats, TimelineItem, JobDto, WorkerStatusDto } from '../types';
 
 interface DashboardStore {
@@ -38,19 +39,31 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   },
 
   startSignalR: () => {
+    if (get().connection) return;
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    const token = localStorage.getItem('auth_token') || '';
 
+    // KHÔNG truyền accessTokenFactory: với WebSocket, SignalR gắn token vào URL
+    // (?access_token=...) → base64(user:pass) của admin lọt vào access log nginx.
+    // Hub không yêu cầu auth nên không cần token.
     const conn = new HubConnectionBuilder()
-      .withUrl(`${apiUrl}/hubs/jobs`, {
-        accessTokenFactory: () => token,
-      })
+      .withUrl(`${apiUrl}/hubs/jobs`)
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build();
 
-    conn.on('job:created', () => get().fetchStats());
-    conn.on('job:statusChanged', () => get().fetchStats());
+    // Gộp các event dồn dập (worker xử lý nhiều job song song) thành 1 lần refresh.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        get().fetchStats();
+        const jobs = useJobStore.getState();
+        jobs.fetch(jobs.page);
+      }, 1000);
+    };
+
+    conn.on('job:created', refresh);
+    conn.on('job:statusChanged', refresh);
     conn.on('worker:status', (status: WorkerStatusDto) => {
       set(state => ({
         stats: state.stats
@@ -58,7 +71,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
           : state.stats
       }));
     });
-    conn.on('stats:updated', (stats: DashboardStats) => set({ stats }));
 
     conn.start().catch(console.error);
     set({ connection: conn });
