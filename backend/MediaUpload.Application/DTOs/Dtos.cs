@@ -61,6 +61,8 @@ public record JobDto(
     string? CompletedAtUtc
 );
 
+public record JobEventDto(string AtUtc, string Step, string? Detail);
+
 public record JobListResponse(List<JobDto> Items, int Total, int Page, int PageSize);
 
 // ── TimeWindow ───────────────────────────────────────────

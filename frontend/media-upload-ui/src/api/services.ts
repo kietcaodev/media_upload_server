@@ -2,7 +2,7 @@ import api from './client';
 import type {
   JobListResponse, DashboardStats, TimelineItem,
   TimeWindowDto, ErpEndpointDto, CredentialDto,
-  SettingDto, WorkerStatusDto, CreateCredentialResponse
+  SettingDto, WorkerStatusDto, CreateCredentialResponse, JobEventDto
 } from '../types';
 
 // ── Dashboard ────────────────────────────────────────────────────────
@@ -19,6 +19,7 @@ export const jobsApi = {
   },
   cancel: (id: string) => api.patch(`/api/jobs/${id}/cancel`).then(r => r.data),
   retry: (id: string) => api.patch(`/api/jobs/${id}/retry`).then(r => r.data),
+  events: (id: string) => api.get<JobEventDto[]>(`/api/jobs/${id}/events`).then(r => r.data),
 };
 
 // ── Upload ───────────────────────────────────────────────────────────

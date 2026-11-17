@@ -18,6 +18,12 @@ export interface JobDto {
   completedAtUtc?: string;
 }
 
+export interface JobEventDto {
+  atUtc: string;
+  step: string;
+  detail?: string;
+}
+
 export interface JobListResponse {
   items: JobDto[];
   total: number;

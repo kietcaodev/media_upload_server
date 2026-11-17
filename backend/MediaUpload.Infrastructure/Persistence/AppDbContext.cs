@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ErpEndpointConfig> ErpEndpointConfigs => Set<ErpEndpointConfig>();
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<JobEvent> JobEvents => Set<JobEvent>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -20,6 +21,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.CreatedAtUtc);
             e.Property(x => x.Status).HasConversion<int>();
+        });
+
+        model.Entity<JobEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.JobId);
+            // Xoá job (DELETE /api/upload/{id}) thì xoá luôn lịch sử của nó.
+            e.HasOne<UploadJob>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
         });
 
         model.Entity<TimeWindowConfig>(e =>

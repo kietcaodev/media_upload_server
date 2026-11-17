@@ -63,9 +63,23 @@ public class UploadJobRepository(AppDbContext db) : IUploadJobRepository
         {
             j.Status = Domain.Enums.JobStatus.Pending;
             j.LastError = "Reset after restart";
+            db.JobEvents.Add(new JobEvent
+            {
+                JobId = j.Id, Step = JobEventSteps.ResetAfterRestart,
+                Detail = "Service khởi động lại khi job đang gửi ERP → đưa về Pending để gửi lại",
+            });
         }
         if (stuck.Count > 0) await db.SaveChangesAsync();
     }
+
+    public async Task AddEventAsync(Guid jobId, string step, string? detail = null, DateTime? atUtc = null)
+    {
+        db.JobEvents.Add(new JobEvent { JobId = jobId, Step = step, Detail = detail, AtUtc = atUtc ?? DateTime.UtcNow });
+        await db.SaveChangesAsync();
+    }
+
+    public Task<List<JobEvent>> GetEventsAsync(Guid jobId) =>
+        db.JobEvents.Where(e => e.JobId == jobId).OrderBy(e => e.AtUtc).ThenBy(e => e.Id).ToListAsync();
 }
 
 public class TimeWindowConfigRepository(AppDbContext db) : ITimeWindowConfigRepository

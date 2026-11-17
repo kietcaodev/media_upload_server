@@ -102,6 +102,8 @@ public class JobWorkerService(
                             {
                                 job.SavedPath = promotedPath;
                                 await jobRepo.UpdateAsync(job);
+                                await jobRepo.AddEventAsync(job.Id, JobEventSteps.MovedToNas,
+                                    $"Đã vào Time Window – chuyển lên NAS: {promotedPath}");
                             }
 
                             await _channel.Writer.WriteAsync(job, ct);
@@ -157,35 +159,49 @@ public class JobWorkerService(
         workerState.IncrementActive();
         try
         {
+            var maxRetry = await settings.GetIntAsync("worker.max_retry", 3);
+
             fresh.Status = JobStatus.Processing;
             fresh.ProcessedAtUtc = DateTime.UtcNow;
             await jobRepo.UpdateAsync(fresh);
+            await jobRepo.AddEventAsync(fresh.Id, JobEventSteps.Processing,
+                $"Lần {fresh.RetryCount + 1}/{maxRetry}: gửi lên ERP {fresh.ErpTarget} (order {fresh.OrderId})");
             await notifier.JobStatusChangedAsync(fresh);
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var (success, error) = await erpPush.PushAsync(fresh);
+            sw.Stop();
 
             if (success)
             {
                 fresh.Status = JobStatus.Success;
                 fresh.CompletedAtUtc = DateTime.UtcNow;
                 fresh.LastError = null;
+                await jobRepo.AddEventAsync(fresh.Id, JobEventSteps.ErpSuccess,
+                    $"ERP {fresh.ErpTarget} nhận thành công sau {sw.Elapsed.TotalSeconds:F2}s");
             }
             else
             {
                 fresh.RetryCount++;
                 fresh.LastError = error;
-                var maxRetry = await settings.GetIntAsync("worker.max_retry", 3);
                 var retryDelayMin = await settings.GetIntAsync("worker.retry_delay_minutes", 5);
+                await jobRepo.AddEventAsync(fresh.Id, JobEventSteps.ErpFailed,
+                    $"Sau {sw.Elapsed.TotalSeconds:F2}s: {error}");
 
                 if (fresh.RetryCount >= maxRetry)
                 {
                     fresh.Status = JobStatus.Failed;
                     fresh.CompletedAtUtc = DateTime.UtcNow;
+                    await jobRepo.AddEventAsync(fresh.Id, JobEventSteps.GaveUp,
+                        $"Hết {maxRetry} lượt thử → Failed (có thể bấm Retry thủ công)");
                 }
                 else
                 {
+                    var delayMin = retryDelayMin * fresh.RetryCount;
                     fresh.Status = JobStatus.Pending;
-                    fresh.ScheduledAtUtc = DateTime.UtcNow.AddMinutes(retryDelayMin * fresh.RetryCount);
+                    fresh.ScheduledAtUtc = DateTime.UtcNow.AddMinutes(delayMin);
+                    await jobRepo.AddEventAsync(fresh.Id, JobEventSteps.RetryScheduled,
+                        $"Thử lại sau {delayMin} phút (lần {fresh.RetryCount + 1}/{maxRetry}, chỉ chạy trong Time Window)");
                 }
             }
 

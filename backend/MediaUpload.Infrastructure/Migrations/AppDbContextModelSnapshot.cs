@@ -140,6 +140,34 @@ namespace MediaUpload.Infrastructure.Migrations
                     b.ToTable("ErpEndpointConfigs");
                 });
 
+            modelBuilder.Entity("MediaUpload.Domain.Entities.JobEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Step")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.ToTable("JobEvents");
+                });
+
             modelBuilder.Entity("MediaUpload.Domain.Entities.SystemSetting", b =>
                 {
                     b.Property<int>("Id")
@@ -441,6 +469,15 @@ namespace MediaUpload.Infrastructure.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("UploadJobs");
+                });
+
+            modelBuilder.Entity("MediaUpload.Domain.Entities.JobEvent", b =>
+                {
+                    b.HasOne("MediaUpload.Domain.Entities.UploadJob", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

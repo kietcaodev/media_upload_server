@@ -49,6 +49,7 @@ public class JobsController(
 
         job.Status = JobStatus.Cancelled;
         await jobRepo.UpdateAsync(job);
+        await jobRepo.AddEventAsync(id, JobEventSteps.Cancelled, $"Huỷ thủ công bởi {CallerName()}");
         await hub.Clients.All.SendAsync("job:statusChanged", new { jobId = id, status = "Cancelled" });
         return Ok(MapJob(job));
     }
@@ -67,9 +68,18 @@ public class JobsController(
         job.ScheduledAtUtc = null;
         job.LastError = null;
         await jobRepo.UpdateAsync(job);
+        await jobRepo.AddEventAsync(id, JobEventSteps.ManualRetry, $"Retry thủ công bởi {CallerName()} – reset số lần thử về 0");
         await hub.Clients.All.SendAsync("job:statusChanged", new { jobId = id, status = "Pending" });
         return Ok(MapJob(job));
     }
+
+    [HttpGet("{id:guid}/events")]
+    public async Task<IActionResult> GetEvents(Guid id) =>
+        Ok((await jobRepo.GetEventsAsync(id))
+            .Select(e => new JobEventDto(e.AtUtc.ToString("O"), e.Step, e.Detail)));
+
+    private string CallerName() =>
+        (HttpContext.Items["credential"] as ApiCredential)?.Name ?? "unknown";
 
     private static JobDto MapJob(UploadJob j) => new(
         j.Id, j.FileId, j.OriginalFileName, j.FileSize, j.ErpTarget,

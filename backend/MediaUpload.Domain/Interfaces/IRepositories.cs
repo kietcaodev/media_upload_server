@@ -12,6 +12,8 @@ public interface IUploadJobRepository
     Task UpdateAsync(UploadJob job);
     Task DeleteAsync(Guid id);
     Task ResetStuckJobsAsync(); // Running → Pending on startup
+    Task AddEventAsync(Guid jobId, string step, string? detail = null, DateTime? atUtc = null);
+    Task<List<JobEvent>> GetEventsAsync(Guid jobId);
 }
 
 public interface ITimeWindowConfigRepository

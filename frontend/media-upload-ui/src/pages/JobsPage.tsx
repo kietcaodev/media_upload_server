@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import JobTimelineDrawer from './JobTimelineDrawer';
 import { Table, Tag, Space, Button, Select, Typography, Card, Popconfirm } from 'antd';
 import { RedoOutlined, StopOutlined, SyncOutlined } from '@ant-design/icons';
 import { useJobStore } from '../stores/jobStore';
@@ -24,10 +25,17 @@ const STATUS_OPTIONS = [
 export default function JobsPage() {
   const { jobs, total, page, pageSize, loading, statusFilter, fetch, cancel, retry, setFilter } = useJobStore();
 
+  // Giữ id (không giữ object) để drawer luôn lấy bản job mới nhất khi danh sách refresh realtime.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedJob = jobs.find(j => j.id === selectedId) ?? null;
+
   useEffect(() => { fetch(1); }, []);
 
   const columns = [
-    { title: 'File', dataIndex: 'originalFileName', ellipsis: true },
+    {
+      title: 'File', dataIndex: 'originalFileName', ellipsis: true,
+      render: (v: string, r: JobDto) => <a onClick={() => setSelectedId(r.id)} title="Xem timeline">{v}</a>,
+    },
     { title: 'ERP', dataIndex: 'erpTarget', width: 90 },
     { title: 'Size', dataIndex: 'fileSize', width: 90, render: (v: number) => `${(v / 1024 / 1024).toFixed(1)} MB` },
     { title: 'Status', dataIndex: 'status', width: 110, render: (s: string) => <Tag color={statusColor[s]}>{s}</Tag> },
@@ -74,6 +82,7 @@ export default function JobsPage() {
           scroll={{ x: 1100 }}
         />
       </Card>
+      <JobTimelineDrawer job={selectedJob} onClose={() => setSelectedId(null)} />
     </Space>
   );
 }

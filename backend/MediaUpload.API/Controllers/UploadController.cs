@@ -107,10 +107,12 @@ public class UploadController(
             Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
             await using (var fs = System.IO.File.Create(stagingPath))
                 await file.CopyToAsync(fs);
+            var stagedAtUtc = DateTime.UtcNow;
 
             // Trong window → chuyển thẳng lên NAS ngay; ngoài window → giữ ở staging,
             // worker sẽ tự chuyển lên NAS khi vào window (xem FileStagingService).
             var savedPath = await fileStaging.PromoteToNasIfWithinWindowAsync(stagingPath);
+            var promotedAtUtc = DateTime.UtcNow;
 
             var job = new UploadJob
             {
@@ -133,6 +135,13 @@ public class UploadController(
             };
 
             await jobRepo.AddAsync(job);
+            await jobRepo.AddEventAsync(job.Id, JobEventSteps.Received,
+                $"Nhận file {job.OriginalFileName} ({file.Length / 1024.0 / 1024.0:F2} MB), lưu tạm: {stagingPath}", stagedAtUtc);
+            if (savedPath != stagingPath)
+                await jobRepo.AddEventAsync(job.Id, JobEventSteps.MovedToNas, $"Đã chuyển lên NAS: {savedPath}", promotedAtUtc);
+            else
+                await jobRepo.AddEventAsync(job.Id, JobEventSteps.WaitingForWindow,
+                    "Ngoài Time Window – file giữ ở staging, worker sẽ chuyển lên NAS và gửi ERP khi tới khung giờ", promotedAtUtc);
             await hub.Clients.All.SendAsync("job:created", MapJob(job));
 
             var sizeInMb = (file.Length / 1024.0 / 1024.0).ToString("F2");
