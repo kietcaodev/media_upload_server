@@ -153,6 +153,11 @@ run_step() {
 # ── Secrets: tái sử dụng nếu đã deploy trước đó, tránh sinh lại mật khẩu DB
 #    (nếu regenerate, connection string sẽ không khớp DB đã tạo ở lần chạy trước) ─
 SECRETS_FILE="${APP_DIR}/.deploy-secrets"
+# Token Bearer mà nginx tự gắn cho request app mobile cũ ở port LEGACY_HTTP_PORT (app không
+# gửi token – server.js cũ cho qua). Tạo 1 lần trong UI: Cấu hình → Credentials → Bearer,
+# CHỈ tick quyền Upload, rồi chạy: sudo LEGACY_UPLOAD_TOKEN=<token> bash deploy.sh
+# Giá trị được lưu vào secrets file, các lần deploy sau không cần truyền lại.
+_ENV_LEGACY_UPLOAD_TOKEN="${LEGACY_UPLOAD_TOKEN:-}"
 if [[ -f "$SECRETS_FILE" ]]; then
     log "Tìm thấy secrets từ lần deploy trước → tái sử dụng DB_PASS/AES_KEY."
     # shellcheck disable=SC1090
@@ -161,6 +166,10 @@ fi
 
 [[ -z "${DB_PASS:-}" ]] && DB_PASS=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 32)
 [[ -z "${AES_KEY:-}" ]] && AES_KEY=$(openssl rand -base64 32)
+LEGACY_UPLOAD_TOKEN="${_ENV_LEGACY_UPLOAD_TOKEN:-${LEGACY_UPLOAD_TOKEN:-}}"
+# Token được nhúng vào config nginx – chỉ cho phép ký tự base64url (đúng định dạng token UI sinh ra).
+[[ -z "$LEGACY_UPLOAD_TOKEN" || "$LEGACY_UPLOAD_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]] \
+    || err "LEGACY_UPLOAD_TOKEN chứa ký tự không hợp lệ (chỉ A-Z a-z 0-9 _ -)"
 
 CONN_STRING="Host=localhost;Port=5432;Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASS}"
 
@@ -170,6 +179,7 @@ DB_USER=${DB_USER}
 DB_PASS=${DB_PASS}
 AES_KEY=${AES_KEY}
 CONN_STRING=${CONN_STRING}
+LEGACY_UPLOAD_TOKEN=${LEGACY_UPLOAD_TOKEN}
 EOF
 chmod 600 "$SECRETS_FILE"
 chown root:root "$SECRETS_FILE"
@@ -529,6 +539,14 @@ step_setup_nginx() {
 
     local server_name="${DOMAIN:-_}"
 
+    local legacy_auth="# LEGACY_UPLOAD_TOKEN chưa cấu hình – app mobile cũ sẽ nhận 401"
+    if [[ -n "${LEGACY_UPLOAD_TOKEN:-}" ]]; then
+        legacy_auth="proxy_set_header   Authorization     \"Bearer ${LEGACY_UPLOAD_TOKEN}\";"
+    else
+        warn "Chưa có LEGACY_UPLOAD_TOKEN → app mobile cũ (port ${LEGACY_HTTP_PORT}) sẽ bị 401."
+        warn "Tạo credential Bearer chỉ quyền Upload trong UI rồi chạy: sudo LEGACY_UPLOAD_TOKEN=<token> bash deploy.sh"
+    fi
+
     # ── TLS: chỉ có IP, không có domain → không thể xin cert Let's Encrypt
     # (cần domain để xác thực HTTP-01/DNS-01). Dùng chứng chỉ self-signed –
     # trình duyệt sẽ cảnh báo "không an toàn/Not private" lần đầu truy cập,
@@ -639,6 +657,9 @@ server {
     location = /api/upload {
         proxy_pass         http://mediaupload_dotnet_api/api/upload;
         proxy_http_version 1.1;
+        # App cũ không gửi token (server.js cho qua) → gắn sẵn token của credential
+        # chỉ-quyền-Upload. Ghi đè mọi Authorization client gửi lên ở port này.
+        ${legacy_auth}
         proxy_set_header   Host              \$host;
         proxy_set_header   X-Real-IP         \$remote_addr;
         proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
@@ -656,15 +677,17 @@ server {
 }
 EOF
 
+    # Config chứa LEGACY_UPLOAD_TOKEN → chỉ root đọc (nginx master chạy root nên vẫn đọc được).
+    chmod 600 "/etc/nginx/sites-available/${NGINX_SITE_NAME}"
     ln -sf "/etc/nginx/sites-available/${NGINX_SITE_NAME}" /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
 
     nginx -t && systemctl reload nginx
     log "Nginx đã reload"
 }
-# Đổi tên checkpoint (_v2) để bước này chạy lại 1 lần trên server đã deploy, áp dụng
-# server block port ${LEGACY_HTTP_PORT} mới. Bước này idempotent (ghi đè file config).
-run_step "setup_nginx_v2" step_setup_nginx
+# LUÔN chạy (không checkpoint): bước này idempotent (ghi đè config, cert chỉ tạo nếu chưa có)
+# và config phụ thuộc LEGACY_UPLOAD_TOKEN có thể đổi giữa các lần deploy.
+step_setup_nginx
 
 # =============================================================================
 # BƯỚC 9b: Mở port ${NGINX_PUBLIC_PORT} trên iptables
