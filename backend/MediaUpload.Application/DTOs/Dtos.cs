@@ -156,8 +156,11 @@ public record DashboardStats(
     bool WorkerPaused,
     string? WorkerPauseReason,
     int ActiveWorkers,
-    bool WithinTimeWindow
+    bool WithinTimeWindow,
+    List<DiskUsageDto> Disks
 );
+
+public record DiskUsageDto(string Label, string Path, string MountPoint, long TotalBytes, long FreeBytes, long MinFreeBytes);
 
 public record DashboardTimelineItem(
     string Date,        // yyyy-MM-dd in local time

@@ -18,11 +18,24 @@ public class DashboardController(
     WorkerStateService workerState,
     TimeWindowChecker timeWindow,
     SettingsService settings,
+    FileStagingService fileStaging,
     AppDbContext db) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<IActionResult> Stats()
     {
+        var minFree = await settings.GetLongAsync("nas.min_free_space_bytes", 1073741824);
+        var disks = new List<DiskUsageDto>();
+        foreach (var (label, path) in new[]
+                 {
+                     ("Staging (local VPS)", await fileStaging.GetStagingDirAsync()),
+                     ("NAS", await fileStaging.GetNasDirAsync()),
+                 })
+        {
+            var u = FileStagingService.GetDiskUsage(path);
+            if (u != null) disks.Add(new DiskUsageDto(label, path, u.MountPoint, u.TotalBytes, u.FreeBytes, minFree));
+        }
+
         var stats = new DashboardStats(
             TotalJobs:       await jobRepo.CountAsync(),
             PendingJobs:     await jobRepo.CountAsync(JobStatus.Pending),
@@ -33,7 +46,8 @@ public class DashboardController(
             WorkerPaused:    workerState.IsPaused,
             WorkerPauseReason: workerState.PauseReason,
             ActiveWorkers:   workerState.ActiveCount,
-            WithinTimeWindow: await timeWindow.IsWithinWindowAsync()
+            WithinTimeWindow: await timeWindow.IsWithinWindowAsync(),
+            Disks: disks
         );
         return Ok(stats);
     }

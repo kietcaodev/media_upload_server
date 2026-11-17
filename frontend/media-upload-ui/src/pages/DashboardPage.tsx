@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { Row, Col, Card, Statistic, Button, Table, Tag, Typography, Space, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Button, Table, Tag, Typography, Space, Alert, Progress } from 'antd';
 import {
-  CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, HddOutlined,
   PauseCircleOutlined, PlayCircleOutlined, SyncOutlined
 } from '@ant-design/icons';
 import { useDashboardStore } from '../stores/dashboardStore';
@@ -11,6 +11,11 @@ import { formatLocalTime } from '../api/client';
 import type { JobDto } from '../types';
 
 const { Title } = Typography;
+
+function formatBytes(b: number): string {
+  const gb = b / 1024 ** 3;
+  return gb >= 1024 ? `${(gb / 1024).toFixed(2)} TB` : `${gb.toFixed(1)} GB`;
+}
 
 const statusColor: Record<string, string> = {
   Pending: 'gold', Processing: 'blue', Success: 'green',
@@ -108,6 +113,35 @@ export default function DashboardPage() {
             />
           </Card>
         </Col>
+      </Row>
+
+      {stats?.disks.filter(d => d.freeBytes < d.minFreeBytes).map(d => (
+        <Alert key={d.path} type="error" showIcon
+          message={`${d.label} sắp đầy: còn ${formatBytes(d.freeBytes)}, dưới ngưỡng ${formatBytes(d.minFreeBytes)} – upload đang bị từ chối`} />
+      ))}
+
+      {/* Disk usage */}
+      <Row gutter={16}>
+        {stats?.disks.map(d => {
+          const used = d.totalBytes - d.freeBytes;
+          const percent = d.totalBytes ? Math.round((used / d.totalBytes) * 100) : 0;
+          // Đỏ: còn < 2× ngưỡng tối thiểu hoặc ≥ 90%; cam: ≥ 80%.
+          const color = d.freeBytes < d.minFreeBytes * 2 || percent >= 90 ? '#ff4d4f' : percent >= 80 ? '#faad14' : '#52c41a';
+          return (
+            <Col xs={24} md={12} key={d.path}>
+              <Card size="small" title={<><HddOutlined /> {d.label}</>}>
+                <Progress percent={percent} strokeColor={color} />
+                <Typography.Text>
+                  Còn trống <b style={{ color }}>{formatBytes(d.freeBytes)}</b> / {formatBytes(d.totalBytes)}
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {d.path} (mount {d.mountPoint}) · chặn upload khi còn dưới {formatBytes(d.minFreeBytes)}
+                </Typography.Text>
+              </Card>
+            </Col>
+          );
+        })}
       </Row>
 
       {/* Jobs table */}

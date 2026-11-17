@@ -89,6 +89,24 @@ public class UploadController(
         var (relFolder, company, ord, user, year, month, day) =
             FileStagingService.BuildFolderStructure(companyId!, ordCode!, userId!, nowLocal);
         var stagingDir = await fileStaging.GetStagingDirAsync();
+
+        // Chặn trước khi ghi nếu ghi xong sẽ làm ổ staging/NAS còn trống dưới nas.min_free_space_bytes
+        // (server.js cũ cũng chặn theo MIN_DISK_SPACE). Không xác định được dung lượng thì cho qua như bản cũ.
+        var minFree  = await settings.GetLongAsync("nas.min_free_space_bytes", 1073741824);
+        var incoming = files.Sum(f => f.Length);
+        foreach (var dir in new[] { stagingDir, await fileStaging.GetNasDirAsync() })
+        {
+            var disk = FileStagingService.GetDiskUsage(dir);
+            if (disk != null && disk.FreeBytes - incoming < minFree)
+                return StatusCode(StatusCodes.Status507InsufficientStorage, new
+                {
+                    success = false,
+                    code = "INSUFFICIENT_DISK_SPACE",
+                    message = $"Không đủ dung lượng trống trên {disk.MountPoint}: còn {disk.FreeBytes / 1073741824.0:F1} GB, " +
+                              $"file {incoming / 1073741824.0:F2} GB, phải chừa tối thiểu {minFree / 1073741824.0:F1} GB",
+                });
+        }
+
         var erpTarget  = companyId!.Trim().ToUpperInvariant();
         var maxRetry   = await settings.GetIntAsync("worker.max_retry", 3);
 

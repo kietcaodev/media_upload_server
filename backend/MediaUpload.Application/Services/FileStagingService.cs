@@ -38,6 +38,25 @@ public class FileStagingService(SettingsService settings, TimeWindowChecker time
         return destPath;
     }
 
+    public record DiskUsage(string MountPoint, long TotalBytes, long FreeBytes);
+
+    /// <summary>Dung lượng của ổ/mount chứa <paramref name="path"/> (mount point dài nhất là tiền tố
+    /// của path, vd /mnt/nas/uploads → mount /mnt/nas). path chưa cần tồn tại. null nếu không xác định được.</summary>
+    public static DiskUsage? GetDiskUsage(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            var drive = DriveInfo.GetDrives()
+                .Where(d => IsUnderDir(full, d.RootDirectory.FullName)
+                         || string.Equals(full.TrimEnd('/', '\\'), d.RootDirectory.FullName.TrimEnd('/', '\\'), StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(d => d.RootDirectory.FullName.Length)
+                .FirstOrDefault(d => d.IsReady);
+            return drive == null ? null : new(drive.RootDirectory.FullName, drive.TotalSize, drive.AvailableFreeSpace);
+        }
+        catch { return null; }
+    }
+
     private static bool IsUnderDir(string path, string dir)
     {
         var fullPath = Path.GetFullPath(path);

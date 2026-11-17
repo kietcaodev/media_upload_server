@@ -42,6 +42,16 @@ export interface DashboardStats {
   workerPauseReason?: string;
   activeWorkers: number;
   withinTimeWindow: boolean;
+  disks: DiskUsageDto[];
+}
+
+export interface DiskUsageDto {
+  label: string;
+  path: string;
+  mountPoint: string;
+  totalBytes: number;
+  freeBytes: number;
+  minFreeBytes: number;
 }
 
 export interface TimelineItem {
